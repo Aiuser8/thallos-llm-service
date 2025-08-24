@@ -241,12 +241,36 @@ function stripTimeFilterIfAny(sql) {
   return out;
 }
 
-// =================== API HANDLER ===================
+// pages/api/query.js
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return send(res, 405, { ok: false, error: 'Use POST' });
-  if (!process.env.SERVICE_API_KEY || req.headers['x-service-key'] !== process.env.SERVICE_API_KEY) {
-    return send(res, 401, { ok: false, error: 'Unauthorized' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Use POST' });
   }
+
+  // --- Auth: allow same-origin browser calls OR require service key for external callers
+  const SERVICE_API_KEY = process.env.SERVICE_API_KEY ?? '';
+  const incomingKey = req.headers['x-service-key'] ?? '';
+
+  // same-origin check: compare Referer/Origin host to Host header
+  const host = req.headers.host ?? '';
+  const ref = req.headers.referer ?? req.headers.origin ?? '';
+  let sameOrigin = false;
+  try {
+    sameOrigin = !!ref && new URL(ref).host === host;
+  } catch {
+    sameOrigin = false;
+  }
+
+  if (!(sameOrigin || (SERVICE_API_KEY && incomingKey === SERVICE_API_KEY))) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+
+  // ... rest of your logic (DB/LLM/etc) goes here ...
+}
+
+if (!(sameOrigin || (SERVICE_API_KEY && incomingKey === SERVICE_API_KEY))) {
+  return res.status(401).json({ ok: false, error: 'Unauthorized' });
+}
 
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -399,4 +423,3 @@ export default async function handler(req, res) {
     console.error('QUERY_ERROR:', err);
     return send(res, 500, { ok: false, error: err.message || String(err) });
   }
-}
