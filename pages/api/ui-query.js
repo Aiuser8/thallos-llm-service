@@ -1,14 +1,18 @@
-// Force Node runtime (pg won't run on Edge)
-export const config = { runtime: 'nodejs' };
+// pages/api/ui-query.js
+export const config = { runtime: 'nodejs' }; // pg won't run on Edge
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ ok: false, error: 'Use POST' });
     return;
   }
+
   try {
-    // forward to the internal /api/query with the service key
-    const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
+    // Use an absolute base to avoid env weirdness
+    const base =
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://thallos-llm-service.vercel.app');
+
     const r = await fetch(`${base}/api/query`, {
       method: 'POST',
       headers: {
@@ -18,7 +22,7 @@ export default async function handler(req, res) {
       body: JSON.stringify(req.body || {})
     });
 
-    const data = await r.json().catch(() => ({ ok: false, error: 'Upstream non‑JSON' }));
+    const data = await r.json().catch(() => ({}));
     res.status(r.ok ? 200 : (r.status || 500)).json(data);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || String(err) });
