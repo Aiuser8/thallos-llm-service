@@ -1,0 +1,15 @@
+{
+  "name": "thallos-llm-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "openai": "^4.58.1",
+    "pg": "^8.11.5"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev"
+  }
+}
