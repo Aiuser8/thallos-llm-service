@@ -40,9 +40,10 @@
 
       submitBtn.disabled = true; submitBtn.textContent = 'Running…';
       try {
-        const resp = await fetch('/api/ui-query', {
+        // Call the server route directly (same-origin bypass is handled in /api/query)
+        const resp = await fetch('/api/query', {
           method: 'POST',
-          headers: {'content-type':'application/json'},
+          headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ question: textarea.value })
         });
         const data = await resp.json();
