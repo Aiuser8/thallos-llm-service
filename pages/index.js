@@ -13,7 +13,7 @@ export default function Home() {
     setLoading(true);
     setAnswer(''); setSql(''); setRows([]);
     try {
-      const resp = await fetch('/api/ui-query', {
+      const resp = await fetch('/api/query', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ question }),
