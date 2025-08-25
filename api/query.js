@@ -1,4 +1,5 @@
-// Root Serverless Function: /api/query
+// pages/api/query.js
+// Force Node runtime (pg won't run on Edge)
 export const config = { runtime: 'nodejs' };
 
 import { Pool } from 'pg';
@@ -15,22 +16,28 @@ function send(res, status, obj) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return send(res, 405, { ok: false, error: 'Use POST' });
+  if (req.method !== 'POST') {
+    return send(res, 405, { ok: false, error: 'Use POST' });
+  }
 
-  // simple auth for non–same-origin calls
-  const svcKey = req.headers['x-service-key'] || '';
+  // ---- Same-origin bypass for browser UI ----
   const host = req.headers.host || '';
   const referer = req.headers.referer || req.headers.origin || '';
   let sameOrigin = false;
-  try { sameOrigin = referer && new URL(referer).host === host; } catch {}
-  if (!sameOrigin && svcKey !== (process.env.SERVICE_API_KEY || '')) {
-    return send(res, 401, { ok: false, error: 'Unauthorized' });
+  try { sameOrigin = !!referer && new URL(referer).host === host; } catch { sameOrigin = false; }
+
+  // Require key if NOT same-origin
+  const svcKey = req.headers['x-service-key'] || '';
+  const requiredKey = process.env.SERVICE_API_KEY || '';
+  if (!sameOrigin && (!svcKey || svcKey !== requiredKey)) {
+    return send(res, 401, { ok: false, error: 'unauthorized' });
   }
 
   // parse body
   let body = req.body;
   if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { return send(res, 400, { ok: false, error: 'Invalid JSON body' }); }
+    try { body = JSON.parse(body); }
+    catch { return send(res, 400, { ok: false, error: 'Invalid JSON body' }); }
   }
   const question = (body?.question || '').trim();
   if (!question) return send(res, 400, { ok: false, error: 'Missing "question"' });
@@ -44,8 +51,12 @@ export default async function handler(req, res) {
     return send(res, 500, { ok: false, error: `DB error: ${e.message}` });
   }
 
-  // LLM → SQL (simple baseline)
+  if (!process.env.OPENAI_API_KEY) {
+    return send(res, 500, { ok: false, error: 'OPENAI_API_KEY not set' });
+  }
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  // LLM → SQL
   let raw;
   try {
     const gen = await openai.chat.completions.create({
@@ -75,7 +86,7 @@ export default async function handler(req, res) {
   if (sql.includes(';')) return send(res, 400, { ok: false, error: 'Multiple statements not allowed', sql });
   if (!/\blimit\s+\d+\b/i.test(sql)) sql = `${sql}\nLIMIT 500`;
 
-  // run query
+  // Run SQL
   let rows;
   try {
     const c2 = await pool.connect();
@@ -85,7 +96,7 @@ export default async function handler(req, res) {
     return send(res, 500, { ok: false, error: `SQL error: ${e.message}`, sql });
   }
 
-  // summarize
+  // Summarize
   let answer = '';
   try {
     const sum = await openai.chat.completions.create({
@@ -97,7 +108,7 @@ export default async function handler(req, res) {
       ],
     });
     answer = sum.choices?.[0]?.message?.content?.trim() || '';
-  } catch {}
+  } catch (_) {}
 
-  send(res, 200, { ok: true, answer, sql, rows });
+  return send(res, 200, { ok: true, answer, sql, rows });
 }
