@@ -6,7 +6,7 @@ import { Pool } from 'pg';
 import OpenAI from 'openai';
 
 // ---------- config ----------
-const DB_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 60000);
+const DB_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 600000);
 const MAX_LIMIT = 500;
 
 const pool = new Pool({
