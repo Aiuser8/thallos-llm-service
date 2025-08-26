@@ -1,4 +1,4 @@
-// api/query.js  — Hosted LLM→SQL engine (hard‑prompt version)
+// api/query.js  — Hosted LLM→SQL engine (hard-prompt version)
 // Force Node runtime (pg won't run on Edge)
 export const config = { runtime: 'nodejs' };
 
@@ -295,61 +295,66 @@ export default async function handler(req, res) {
     }
   }
 
-  // LLM → SQL (hard‑prompt system prompt)
+  // LLM → SQL (hard-prompt) with strict JSON
   if (!process.env.OPENAI_API_KEY) return send(res, 500, { ok:false, error:'OPENAI_API_KEY not set' });
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const { tables, colsByTable, doc: schemaDoc } = await fetchSchema();
+  const { tables, colsByTable } = await fetchSchema();
 
   let rawGen;
   try {
- const gen = await openai.chat.completions.create({
-  model: 'gpt-5',
-  messages: [
-
-     {
-  role: 'system',
-  content:
-    `Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.\n` +
-    `Rules:\n` +
-    `• You MAY use CTEs (WITH ...) but only ONE statement total (no trailing semicolons).\n` +
-    `• Preferred sources:\n` +
-    `   – Use public.market_data_hourly for time-window summaries, moving stats, correlations, or any query that can work at hourly resolution.\n` +
-    `   – Use public.market_data only when you truly need raw tick granularity or the very latest single reading.\n` +
-    `• Always include protocol='aave'.\n` +
-    `• Asset symbols must be UPPERCASE; if user says ETH, use symbol='WETH'.\n` +
-    `• If the user asks for "latest"/"most recent", query public.market_data and use ORDER BY ts DESC LIMIT 1 without a time filter.\n` +
-    `• For windows ('7 days', etc.), add ts >= NOW() - INTERVAL '<window>'. If hourly is acceptable, prefer public.market_data_hourly.\n` +
-    `• utilization is 0..1; interpret percentages (85% -> 0.85).\n` +
-    `• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly (use public.market_data_hourly) and/or compute via a correlated subquery.\n` +
-    `Return STRICT JSON only.\n\n` +
-    `Whitelisted schema:\n` +
-    `public.market_data(\n` +
-    `  protocol text, symbol text, supply numeric, borrows numeric, available numeric,\n` +
-    `  supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz\n` +
-    `)\n` +
-    `public.market_data_hourly(\n` +
-    `  ts timestamptz, protocol text, symbol text,\n` +
-    `  utilization numeric, supply numeric, borrows numeric, available numeric,\n` +
-    `  supply_apy numeric, borrow_apy numeric, n_rows integer\n` +
-    `)`
-},
-{ role: 'user', content: `Question: ${question}\nRespond ONLY with JSON containing a single key "sql".` }
-  ],
-});
-
-const rawGen = gen.choices?.[0]?.message?.content || '{}';
+    const gen = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            `Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.\n` +
+            `Rules:\n` +
+            `• You MAY use CTEs (WITH ...) but only ONE statement total (no trailing semicolons).\n` +
+            `• Preferred sources:\n` +
+            `   – Use public.market_data_hourly for time-window summaries, moving stats, correlations, or any query that can work at hourly resolution.\n` +
+            `   – Use public.market_data only when you truly need raw tick granularity or the very latest single reading.\n` +
+            `• Always include protocol='aave'.\n` +
+            `• Asset symbols must be UPPERCASE; if user says ETH, use symbol='WETH'.\n` +
+            `• If the user asks for "latest"/"most recent", query public.market_data and use ORDER BY ts DESC LIMIT 1 without a time filter.\n` +
+            `• For windows ('7 days', etc.), add ts >= NOW() - INTERVAL '<window>'. If hourly is acceptable, prefer public.market_data_hourly.\n` +
+            `• utilization is 0..1; interpret percentages (85% -> 0.85).\n` +
+            `• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly (use public.market_data_hourly) and/or compute via a correlated subquery.\n` +
+            `Return STRICT JSON only.\n\n` +
+            `Whitelisted schema:\n` +
+            `public.market_data(\n` +
+            `  protocol text, symbol text, supply numeric, borrows numeric, available numeric,\n` +
+            `  supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz\n` +
+            `)\n` +
+            `public.market_data_hourly(\n` +
+            `  ts timestamptz, protocol text, symbol text,\n` +
+            `  utilization numeric, supply numeric, borrows numeric, available numeric,\n` +
+            `  supply_apy numeric, borrow_apy numeric, n_rows integer\n` +
+            `)`
+        },
+        { role: 'user', content: `Question: ${question}\nRespond ONLY with JSON containing a single key "sql".` }
+      ],
+    });
+    rawGen = gen.choices?.[0]?.message?.content || '{}';
   } catch (e) {
     return send(res, 500, { ok:false, error:`LLM error: ${e.message}` });
   }
 
+  // Parse JSON robustly
   let sql;
   try {
     const obj = JSON.parse(rawGen);
     sql = String(obj.sql || '').trim();
   } catch {
-    return send(res, 500, { ok:false, error:'LLM returned non-JSON', raw: rawGen });
+    const match = rawGen.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { sql = String(JSON.parse(match[0]).sql || '').trim(); } catch {}
+    }
   }
+  if (!sql) return send(res, 500, { ok:false, error:'LLM returned non-JSON', raw: rawGen });
   if (!/^\s*(select|with)\b/i.test(sql)) return send(res, 400, { ok:false, error:'Only SELECT/CTE allowed', sql });
 
   sql = tweakSqlHeuristics(sql, question);
@@ -377,26 +382,28 @@ const rawGen = gen.choices?.[0]?.message?.content || '{}';
 
     if (!needsRetry) return send(res, 500, { ok:false, error:`SQL error: ${msg}`, sql: safeSql });
 
-    // Retry: ask model to avoid the failing construct
+    // Retry: ask model to avoid the failing construct (still prefer hourly)
     let raw2;
     try {
       const regen = await openai.chat.completions.create({
-        model: 'gpt-5',
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
         messages: [
-        {
-  role: 'system',
-  content:
-    `Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.\n` +
-    `Hard rules:\n` +
-    `• Prefer public.market_data_hourly for windowed summaries / moving stats; use public.market_data only for true “latest” single reads or raw tick detail.\n` +
-    `• You MAY use CTEs; one statement only; no semicolons.\n` +
-    `• DO NOT use percentile_cont/disc with OVER(). For rolling 30-day p75, use a correlated subquery over an hourly pre-agg.\n` +
-    `• You MAY use generate_series for lead–lag grids.\n` +
-    `• Always include protocol='aave' and uppercase symbols (ETH -> WETH).\n` +
-    `Return STRICT JSON only.`
-},
-{ role: 'user', content: `Original question:\n${question}` },
-{ role: 'assistant', content: `Previous SQL:\n${safeSql}\n\nError:\n${msg}` }
+          {
+            role: 'system',
+            content:
+              `Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.\n` +
+              `Hard rules:\n` +
+              `• Prefer public.market_data_hourly for windowed summaries / moving stats; use public.market_data only for true “latest” single reads or raw tick detail.\n` +
+              `• You MAY use CTEs; one statement only; no semicolons.\n` +
+              `• DO NOT use percentile_cont/disc with OVER(). For rolling 30-day p75, use a correlated subquery over an hourly pre-agg.\n` +
+              `• You MAY use generate_series for lead–lag grids.\n` +
+              `• Always include protocol='aave' and uppercase symbols (ETH -> WETH).\n` +
+              `Return STRICT JSON only.`
+          },
+          { role: 'user', content: `Original question:\n${question}` },
+          { role: 'assistant', content: `Previous SQL:\n${safeSql}\n\nError:\n${msg}` }
         ]
       });
       raw2 = regen.choices?.[0]?.message?.content || '{}';
@@ -405,8 +412,15 @@ const rawGen = gen.choices?.[0]?.message?.content || '{}';
     }
 
     let sql2;
-    try { sql2 = String(JSON.parse(raw2).sql || '').trim(); }
-    catch { return send(res, 500, { ok:false, error:'Retry model returned non-JSON', raw: raw2 }); }
+    try {
+      sql2 = String(JSON.parse(raw2).sql || '').trim();
+    } catch {
+      const m2 = raw2.match(/\{[\s\S]*\}/);
+      if (m2) {
+        try { sql2 = String(JSON.parse(m2[0]).sql || '').trim(); } catch {}
+      }
+    }
+    if (!sql2) return send(res, 500, { ok:false, error:'Retry model returned non-JSON', raw: raw2 });
 
     const patched2 = tweakSqlHeuristics(sql2, question);
     try {
