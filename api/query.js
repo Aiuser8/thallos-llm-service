@@ -212,7 +212,7 @@ async function fetchSchema() {
     const { rows } = await client.query(
       `SELECT table_name, column_name
        FROM information_schema.columns
-       WHERE table_schema='public' AND table_name IN ('market_data')
+       WHERE table_schema='public' AND table_name IN ('market_data','market_data_hourly')
        ORDER BY table_name, ordinal_position;`
     );
     const byTable = new Map();
@@ -303,28 +303,42 @@ export default async function handler(req, res) {
 
   let rawGen;
   try {
-    const gen = await openai.chat.completions.create({
-      model: 'gpt-5',
-      messages: [
-        {
-          role: 'system',
-          content:
-            `Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.\n` +
-            `Rules:\n` +
-            `• You MAY use CTEs (WITH ...) but only ONE statement total (no trailing semicolons).\n` +
-            `• Use public.market_data and exact columns; always include protocol='aave'.\n` +
-            `• Asset symbols must be UPPERCASE; if user says ETH, use symbol='WETH'.\n` +
-            `• If user asks for "latest"/"most recent", use ORDER BY ts DESC LIMIT 1 without a time filter.\n` +
-            `• For windows ('7 days', etc.), add ts >= NOW() - INTERVAL '<window>'.\n` +
-            `• utilization is 0..1; interpret percentages (85% -> 0.85).\n` +
-            `• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly and compute via correlated subquery.\n` +
-            `Return STRICT JSON only.\n\n` +
-            `Whitelisted schema:\n${schemaDoc}`
-        },
-        { role: 'user', content: `Question: ${question}\nRespond ONLY with JSON containing a single key "sql".` }
-      ]
-    });
-    rawGen = gen.choices?.[0]?.message?.content || '{}';
+ const gen = await openai.chat.completions.create({
+  model: 'gpt-5',
+  messages: [
+
+     {
+  role: 'system',
+  content:
+    `Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.\n` +
+    `Rules:\n` +
+    `• You MAY use CTEs (WITH ...) but only ONE statement total (no trailing semicolons).\n` +
+    `• Preferred sources:\n` +
+    `   – Use public.market_data_hourly for time-window summaries, moving stats, correlations, or any query that can work at hourly resolution.\n` +
+    `   – Use public.market_data only when you truly need raw tick granularity or the very latest single reading.\n` +
+    `• Always include protocol='aave'.\n` +
+    `• Asset symbols must be UPPERCASE; if user says ETH, use symbol='WETH'.\n` +
+    `• If the user asks for "latest"/"most recent", query public.market_data and use ORDER BY ts DESC LIMIT 1 without a time filter.\n` +
+    `• For windows ('7 days', etc.), add ts >= NOW() - INTERVAL '<window>'. If hourly is acceptable, prefer public.market_data_hourly.\n` +
+    `• utilization is 0..1; interpret percentages (85% -> 0.85).\n` +
+    `• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly (use public.market_data_hourly) and/or compute via a correlated subquery.\n` +
+    `Return STRICT JSON only.\n\n` +
+    `Whitelisted schema:\n` +
+    `public.market_data(\n` +
+    `  protocol text, symbol text, supply numeric, borrows numeric, available numeric,\n` +
+    `  supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz\n` +
+    `)\n` +
+    `public.market_data_hourly(\n` +
+    `  ts timestamptz, protocol text, symbol text,\n` +
+    `  utilization numeric, supply numeric, borrows numeric, available numeric,\n` +
+    `  supply_apy numeric, borrow_apy numeric, n_rows integer\n` +
+    `)`
+},
+{ role: 'user', content: `Question: ${question}\nRespond ONLY with JSON containing a single key "sql".` }
+  ],
+});
+
+const rawGen = gen.choices?.[0]?.message?.content || '{}';
   } catch (e) {
     return send(res, 500, { ok:false, error:`LLM error: ${e.message}` });
   }
@@ -369,19 +383,20 @@ export default async function handler(req, res) {
       const regen = await openai.chat.completions.create({
         model: 'gpt-5',
         messages: [
-          {
-            role: 'system',
-            content:
-              `Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.\n` +
-              `Hard rules:\n` +
-              `• You MAY use CTEs; one statement only; no semicolons.\n` +
-              `• DO NOT use percentile_cont/disc with OVER(). For rolling 30-day p75, use a correlated subquery over an hourly pre-agg.\n` +
-              `• You MAY use generate_series for lead–lag grids.\n` +
-              `• Always include protocol='aave' and uppercase symbols (ETH -> WETH).\n` +
-              `Return STRICT JSON only.`
-          },
-          { role: 'user', content: `Original question:\n${question}` },
-          { role: 'assistant', content: `Previous SQL:\n${safeSql}\n\nError:\n${msg}` }
+        {
+  role: 'system',
+  content:
+    `Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.\n` +
+    `Hard rules:\n` +
+    `• Prefer public.market_data_hourly for windowed summaries / moving stats; use public.market_data only for true “latest” single reads or raw tick detail.\n` +
+    `• You MAY use CTEs; one statement only; no semicolons.\n` +
+    `• DO NOT use percentile_cont/disc with OVER(). For rolling 30-day p75, use a correlated subquery over an hourly pre-agg.\n` +
+    `• You MAY use generate_series for lead–lag grids.\n` +
+    `• Always include protocol='aave' and uppercase symbols (ETH -> WETH).\n` +
+    `Return STRICT JSON only.`
+},
+{ role: 'user', content: `Original question:\n${question}` },
+{ role: 'assistant', content: `Previous SQL:\n${safeSql}\n\nError:\n${msg}` }
         ]
       });
       raw2 = regen.choices?.[0]?.message?.content || '{}';
