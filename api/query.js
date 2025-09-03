@@ -1,4 +1,4 @@
-// api/query.js  — Hosted LLM→SQL engine (hard-prompt version)
+// api/query.js — Hosted LLM→SQL engine (Aave + Aerodrome)
 // Force Node runtime (pg won't run on Edge)
 export const config = { runtime: 'nodejs' };
 
@@ -45,6 +45,10 @@ function extractSymbolFromText(q = '') {
 function looksLikeLatest(q = '') {
   return /\b(latest|most\s+recent|current)\b/i.test(q);
 }
+function looksLikeAero(q = '') {
+  return /\b(aero|aerodrome)\b/i.test(q) ||
+         /\b(dex|amm)\b/i.test(q) && /\b(volume|fees?|tvl|tx|transactions?)\b/i.test(q);
+}
 function stripTimeFilterIfAny(sql) {
   let out = sql;
   out = out.replace(/AND\s+ts\s*>=\s*.+?(?=(\)|ORDER\s+BY|LIMIT|$))/is, '');
@@ -55,7 +59,7 @@ function stripTimeFilterIfAny(sql) {
   return out;
 }
 
-// --- heuristic fixer to patch common LLM SQL slips ---
+// --- heuristic fixer (kept for Aave paths) ---
 function tweakSqlHeuristics(sql, question = '') {
   let s = String(sql || '');
 
@@ -83,7 +87,7 @@ function tweakSqlHeuristics(sql, question = '') {
     s = s.replace(/\bhours\s*=\s*24\b/gi,        'hours >= 24');
   }
 
-  // Rewrite illegal percentile_cont(... ) OVER(...) into correlated subquery (rolling p75)
+  // rolling p75 patch (Aave hourly)
   const aliasMatch = s.match(/from\s*\(\s*select\s*date_trunc\(\s*'hour'\s*,\s*ts\)\s+as\s+hour[\s\S]+?\)\s+([a-z_][a-z0-9_]*)/i);
   const baseAlias = aliasMatch?.[1] || 'h';
   const hasSymbolRef = new RegExp(`\\b${baseAlias}\\s*\\.\\s*symbol\\b`, 'i').test(s) || /\bsymbol\b/i.test(s);
@@ -111,7 +115,7 @@ function tweakSqlHeuristics(sql, question = '') {
   return s;
 }
 
-// ---- SAFE SQL GUARD (CTE-aware + strings-aware + SRF allowlist + alias aware) ----
+// ---- SAFE SQL GUARD ----
 function guardSql(sql, whitelistTables, whitelistColsByTable) {
   let s = String(sql || '').trim();
   if (s.endsWith(';')) s = s.slice(0, -1).trim();
@@ -119,18 +123,16 @@ function guardSql(sql, whitelistTables, whitelistColsByTable) {
   const stripStrings = (text) => text.replace(/'(?:''|[^'])*'/g, (m) => ' '.repeat(m.length));
   const sNoStrings = stripStrings(s);
 
-  // Single statement; allow WITH ... SELECT
-  if (!/^\s*(select|with)\b/i.test(sNoStrings)) {
-    throw new Error('Only SELECT (or WITH ... SELECT) statements are allowed.');
-  }
+  if (!/^\s*(select|with)\b/i.test(sNoStrings)) throw new Error('Only SELECT (or WITH ... SELECT) statements are allowed.');
   if (sNoStrings.includes(';')) throw new Error('Multiple statements are not allowed.');
-  const forbidden = /\b(update|insert|delete|drop|alter|truncate|create|grant|revoke|copy|vacuum|analyze)\b/i;
-  if (forbidden.test(sNoStrings)) throw new Error('Write/DDL statements are not allowed.');
+  if (/\b(update|insert|delete|drop|alter|truncate|create|grant|revoke|copy|vacuum|analyze)\b/i.test(sNoStrings)) {
+    throw new Error('Write/DDL statements are not allowed.');
+  }
   if (/(--|\/\*)/.test(sNoStrings)) throw new Error('SQL comments are not allowed.');
 
   const normalizeTable = (t) => t.replace(/^public\./i, '').toLowerCase();
 
-  // collect derived aliases and CTE names so we don't treat them as "real tables"
+  // collect derived aliases & CTE names
   const aliasSet = new Set();
   {
     const aliasRegex = /\)\s+([a-z_][a-z0-9_]*)/gi; // ") alias"
@@ -171,9 +173,7 @@ function guardSql(sql, whitelistTables, whitelistColsByTable) {
   }
 
   for (const t of tableCandidates) {
-    if (t && !whitelistTables.has(t)) {
-      throw new Error(`Table not allowed: ${t}`);
-    }
+    if (t && !whitelistTables.has(t)) throw new Error(`Table not allowed: ${t}`);
   }
 
   // fully-qualified column allowlisting
@@ -203,7 +203,7 @@ function guardSql(sql, whitelistTables, whitelistColsByTable) {
   return ensureLimit(s);
 }
 
-// Build schema allowlist once per cold start
+// ---------- schema allowlist (now includes Aerodrome) ----------
 let schemaCache = null;
 async function fetchSchema() {
   if (schemaCache) return schemaCache;
@@ -212,7 +212,8 @@ async function fetchSchema() {
     const { rows } = await client.query(
       `SELECT table_name, column_name
        FROM information_schema.columns
-       WHERE table_schema='public' AND table_name IN ('market_data','market_data_hourly')
+       WHERE table_schema='public'
+         AND table_name IN ('market_data','market_data_hourly','aero_protocol_daily')
        ORDER BY table_name, ordinal_position;`
     );
     const byTable = new Map();
@@ -222,11 +223,16 @@ async function fetchSchema() {
       byTable.get(t).add(r.column_name.toLowerCase());
     }
     const tables = new Set(Array.from(byTable.keys()));
-    const doc = Array.from(byTable.entries())
-      .map(([t]) =>
-        `${t}(protocol text, symbol text, supply numeric, borrows numeric, available numeric, ` +
-        `supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz)`
-      ).join('\n');
+    const doc = [
+      `public.market_data(` +
+      `protocol text, symbol text, supply numeric, borrows numeric, available numeric, ` +
+      `supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz)`,
+      `public.market_data_hourly(` +
+      `ts timestamptz, protocol text, symbol text, utilization numeric, supply numeric, ` +
+      `borrows numeric, available numeric, supply_apy numeric, borrow_apy numeric, n_rows integer)`,
+      `public.aero_protocol_daily(` +
+      `date_utc date, volume_usd numeric, fees_usd numeric, tvl_usd numeric, tx_count bigint, inserted_at timestamptz)`
+    ].join('\n');
 
     schemaCache = { tables, colsByTable: byTable, doc };
     return schemaCache;
@@ -267,31 +273,59 @@ export default async function handler(req, res) {
     return send(res, 500, { ok:false, error:`DB error: ${e.message}` });
   }
 
+  const aeroQuestion = looksLikeAero(question);
+
   // fast path for "latest"
   if (looksLikeLatest(question)) {
-    const sym = extractSymbolFromText(question) || 'USDC';
-    const symbol = normalizeSymbol(sym);
-    const latestSql = `
-      SELECT ts, utilization, ROUND(utilization*100,2) AS utilization_pct
-      FROM public.market_data
-      WHERE protocol='aave' AND symbol='${symbol}'
-      ORDER BY ts DESC
-      LIMIT 1
-    `;
-    try {
-      const c = await pool.connect();
-      let rows;
-      try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestSql)).rows; }
-      finally { c.release(); }
-      const r = rows[0];
-      return send(res, 200, {
-        ok: true,
-        answer: r ? `Latest ${symbol} utilization is ${Number(r.utilization).toFixed(8)}.` : 'No results for that query.',
-        sql: latestSql.trim(),
-        rows
-      });
-    } catch (e) {
-      return send(res, 500, { ok:false, error:`SQL error: ${e.message}`, sql: latestSql.trim() });
+    if (aeroQuestion) {
+      const latestAeroSql = `
+        SELECT date_utc, volume_usd, fees_usd, tvl_usd, tx_count
+        FROM public.aero_protocol_daily
+        ORDER BY date_utc DESC
+        LIMIT 1
+      `;
+      try {
+        const c = await pool.connect();
+        let rows;
+        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestAeroSql)).rows; }
+        finally { c.release(); }
+        const r = rows[0];
+        return send(res, 200, {
+          ok: true,
+          answer: r
+            ? `Latest Aerodrome day (${r.date_utc}): volume $${Number(r.volume_usd).toLocaleString()}, fees $${Number(r.fees_usd).toLocaleString()}, TVL $${Number(r.tvl_usd).toLocaleString()}, tx ${Number(r.tx_count).toLocaleString()}.`
+            : 'No Aerodrome rows found.',
+          sql: latestAeroSql.trim(),
+          rows
+        });
+      } catch (e) {
+        return send(res, 500, { ok:false, error:`SQL error: ${e.message}` });
+      }
+    } else {
+      const sym = extractSymbolFromText(question) || 'USDC';
+      const symbol = normalizeSymbol(sym);
+      const latestSql = `
+        SELECT ts, utilization, ROUND(utilization*100,2) AS utilization_pct
+        FROM public.market_data
+        WHERE protocol='aave' AND symbol='${symbol}'
+        ORDER BY ts DESC
+        LIMIT 1
+      `;
+      try {
+        const c = await pool.connect();
+        let rows;
+        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestSql)).rows; }
+        finally { c.release(); }
+        const r = rows[0];
+        return send(res, 200, {
+          ok: true,
+          answer: r ? `Latest ${symbol} utilization is ${Number(r.utilization).toFixed(8)}.` : 'No results for that query.',
+          sql: latestSql.trim(),
+          rows
+        });
+      } catch (e) {
+        return send(res, 500, { ok:false, error:`SQL error: ${e.message}`, sql: latestSql.trim() });
+      }
     }
   }
 
@@ -299,7 +333,7 @@ export default async function handler(req, res) {
   if (!process.env.OPENAI_API_KEY) return send(res, 500, { ok:false, error:'OPENAI_API_KEY not set' });
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const { tables, colsByTable } = await fetchSchema();
+  const { tables, colsByTable, doc } = await fetchSchema();
 
   let rawGen;
   try {
@@ -311,29 +345,24 @@ export default async function handler(req, res) {
         {
           role: 'system',
           content:
-            `Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.\n` +
-            `Rules:\n` +
-            `• You MAY use CTEs (WITH ...) but only ONE statement total (no trailing semicolons).\n` +
-            `• Preferred sources:\n` +
-            `   – Use public.market_data_hourly for time-window summaries, moving stats, correlations, or any query that can work at hourly resolution.\n` +
-            `   – Use public.market_data only when you truly need raw tick granularity or the very latest single reading.\n` +
-            `• Always include protocol='aave'.\n` +
-            `• Asset symbols must be UPPERCASE; if user says ETH, use symbol='WETH'.\n` +
-            `• If the user asks for "latest"/"most recent", query public.market_data and use ORDER BY ts DESC LIMIT 1 without a time filter.\n` +
-            `• For windows ('7 days', etc.), add ts >= NOW() - INTERVAL '<window>'. If hourly is acceptable, prefer public.market_data_hourly.\n` +
-            `• utilization is 0..1; interpret percentages (85% -> 0.85).\n` +
-            `• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly (use public.market_data_hourly) and/or compute via a correlated subquery.\n` +
-            `Return STRICT JSON only.\n\n` +
-            `Whitelisted schema:\n` +
-            `public.market_data(\n` +
-            `  protocol text, symbol text, supply numeric, borrows numeric, available numeric,\n` +
-            `  supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz\n` +
-            `)\n` +
-            `public.market_data_hourly(\n` +
-            `  ts timestamptz, protocol text, symbol text,\n` +
-            `  utilization numeric, supply numeric, borrows numeric, available numeric,\n` +
-            `  supply_apy numeric, borrow_apy numeric, n_rows integer\n` +
-            `)`
+`Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.
+
+Router rules:
+• If the user asks about Aerodrome (mentions "aero", "aerodrome", or DEX-level volume/fees/TVL/tx), use public.aero_protocol_daily:
+    - date_utc is a DATE (UTC day); use it for all date filters and grouping.
+    - Common derived metric: fee_rate_pct = (fees_usd / NULLIF(volume_usd,0)) * 100.
+• Otherwise (Aave utilization/supply/borrow/etc.), use public.market_data_hourly for time-window summaries and moving stats;
+  use public.market_data only for true “latest” single readings.
+
+General rules:
+• ONE statement total (SELECT or WITH ... SELECT). No semicolons.
+• Prefer hourly table for windows ('7 days', etc.). For Aave windows add ts >= NOW() - INTERVAL '<window>'.
+• utilization is 0..1; interpret percentages (e.g., 85% -> 0.85).
+• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly and/or use correlated subqueries.
+• Return STRICT JSON only.
+
+Whitelisted schema:
+${doc}`
         },
         { role: 'user', content: `Question: ${question}\nRespond ONLY with JSON containing a single key "sql".` }
       ],
@@ -382,7 +411,7 @@ export default async function handler(req, res) {
 
     if (!needsRetry) return send(res, 500, { ok:false, error:`SQL error: ${msg}`, sql: safeSql });
 
-    // Retry: ask model to avoid the failing construct (still prefer hourly)
+    // Retry with adjusted guidance
     let raw2;
     try {
       const regen = await openai.chat.completions.create({
@@ -393,14 +422,14 @@ export default async function handler(req, res) {
           {
             role: 'system',
             content:
-              `Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.\n` +
-              `Hard rules:\n` +
-              `• Prefer public.market_data_hourly for windowed summaries / moving stats; use public.market_data only for true “latest” single reads or raw tick detail.\n` +
-              `• You MAY use CTEs; one statement only; no semicolons.\n` +
-              `• DO NOT use percentile_cont/disc with OVER(). For rolling 30-day p75, use a correlated subquery over an hourly pre-agg.\n` +
-              `• You MAY use generate_series for lead–lag grids.\n` +
-              `• Always include protocol='aave' and uppercase symbols (ETH -> WETH).\n` +
-              `Return STRICT JSON only.`
+`Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.
+
+Hard rules:
+• For Aerodrome use public.aero_protocol_daily and date_utc.
+• For Aave: prefer public.market_data_hourly for windowed summaries; public.market_data only for true "latest".
+• No percentile_cont/disc with OVER(); use correlated subqueries if needed.
+• You MAY use CTEs; one statement only; no semicolons.
+• Return STRICT JSON only.`
           },
           { role: 'user', content: `Original question:\n${question}` },
           { role: 'assistant', content: `Previous SQL:\n${safeSql}\n\nError:\n${msg}` }
@@ -434,7 +463,7 @@ export default async function handler(req, res) {
     finally { c3.release(); }
   }
 
-  // If empty with a time filter, retry without it
+  // If empty with a time filter on Aave hourly, retry without the time filter
   if (rows.length === 0 && /ts\s*>=/i.test(safeSql)) {
     const fallback = stripTimeFilterIfAny(safeSql);
     const c4 = await pool.connect();
