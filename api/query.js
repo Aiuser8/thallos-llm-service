@@ -339,7 +339,6 @@ export default async function handler(req, res) {
   try {
     const gen = await openai.chat.completions.create({
       model: 'gpt-5',
-      temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
         {
@@ -417,7 +416,6 @@ ${doc}`
     try {
       const regen = await openai.chat.completions.create({
         model: 'gpt-5',
-        temperature: 0,
         response_format: { type: 'json_object' },
         messages: [
           {
