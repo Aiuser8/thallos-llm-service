@@ -47,7 +47,7 @@ function looksLikeLatest(q = '') {
 }
 function looksLikeAero(q = '') {
   return /\b(aero|aerodrome)\b/i.test(q) ||
-         /\b(dex|amm)\b/i.test(q) && /\b(volume|fees?|tvl|tx|transactions?)\b/i.test(q);
+         (/\b(dex|amm)\b/i.test(q) && /\b(volume|fees?|tvl|tx|transactions?)\b/i.test(q));
 }
 function stripTimeFilterIfAny(sql) {
   let out = sql;
@@ -338,7 +338,7 @@ export default async function handler(req, res) {
   let rawGen;
   try {
     const gen = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5',
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
@@ -355,8 +355,9 @@ Router rules:
   use public.market_data only for true “latest” single readings.
 
 General rules:
-• ONE statement total (SELECT or WITH ... SELECT). No semicolons.
-• Prefer hourly table for windows ('7 days', etc.). For Aave windows add ts >= NOW() - INTERVAL '<window>'.
+• ONE statement total (SELECT or WITH ... SELECT). No semicolons. CTEs allowed.
+• When joining Aave to Aerodrome daily, first aggregate Aave hourly to daily: date_trunc('day', ts)::date AS date_utc; then JOIN on date_utc.
+• For windows ('7 days', etc.) with Aave, add ts >= NOW() - INTERVAL '<window>' (prefer hourly table).
 • utilization is 0..1; interpret percentages (e.g., 85% -> 0.85).
 • Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly and/or use correlated subqueries.
 • Return STRICT JSON only.
@@ -415,7 +416,7 @@ ${doc}`
     let raw2;
     try {
       const regen = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5',
         temperature: 0,
         response_format: { type: 'json_object' },
         messages: [
@@ -475,7 +476,7 @@ Hard rules:
   let answer = '';
   try {
     const sum = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5',
       messages: [
         { role: 'system', content: 'Answer in 1–2 sentences. Use only numbers from the rows. No tables.' },
         { role: 'user', content: `Question: ${rawQuestion}` },
