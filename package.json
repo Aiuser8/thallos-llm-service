@@ -3,13 +3,76 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "openai": "^4.58.1",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "sql-template-strings": "^2.2.2",
+    "pino": "^9.3.2"
+  },
+  "devDependencies": {
+    "dotenv": "^16.6.1",
+    "nodemon": "^3.1.0"
   },
   "scripts": {
     "dev": "vercel dev",
-    "start": "vercel dev"
+    "start": "node scripts/local-api.mjs",
+    "dev:local": "node scripts/local-api.mjs",
+    "dev:watch": "nodemon --watch api --watch scripts --ext js,mjs --exec node scripts/local-api.mjs"
+  },
+  "tables": {
+    "clean.protocol_chain_tvl_daily": {
+      "description": "Daily total value locked (TVL) per protocol per chain.",
+      "columns": {
+        "protocol_id": "Unique protocol identifier.",
+        "chain": "Blockchain name.",
+        "series_type": "Type of TVL series (e.g., main, staking, borrowed).",
+        "ts": "Date of the snapshot (daily granularity).",
+        "total_liquidity_usd": "Total liquidity in USD.",
+        "ingest_time": "Time when the row was ingested into the warehouse."
+      },
+      "primary_key": ["protocol_id", "chain", "series_type", "ts"]
+    },
+    "clean.lending_market_history": {
+      "description": "Supply and borrow history for on-chain lending markets.",
+      "columns": {
+        "market_id": "Unique identifier for the lending market.",
+        "ts": "Snapshot timestamp (epoch or ISO).",
+        "project": "Protocol/project name (e.g., Aave, Compound).",
+        "chain": "Blockchain name.",
+        "symbol": "Token symbol (e.g., USDC, ETH).",
+        "total_supply_usd": "Total supplied liquidity in USD.",
+        "total_borrow_usd": "Total borrowed liquidity in USD.",
+        "debt_ceiling_usd": "Maximum allowed debt for the market in USD.",
+        "apy_base_supply": "Base APY for supplying assets.",
+        "apy_reward_supply": "Reward APY for supplying assets.",
+        "apy_base_borrow": "Base APY for borrowing assets.",
+        "apy_reward_borrow": "Reward APY for borrowing assets.",
+        "ingest_time": "Time when the row was ingested into the warehouse."
+      },
+      "primary_key": ["market_id", "ts"]
+    },
+    "clean.stablecoin_mcap_by_peg_daily": {
+      "description": "Daily stablecoin market capitalization broken down by peg currency.",
+      "columns": {
+        "day": "Date of snapshot.",
+        "peg": "Pegged currency code (e.g., USD, EUR, JPY).",
+        "amount_usd": "Total stablecoin market cap in USD terms.",
+        "ingest_time": "Time when the row was ingested into the warehouse."
+      },
+      "primary_key": ["day", "peg"]
+    },
+    "clean.etf_flows_daily": {
+      "description": "Net ETF inflows/outflows for tracked assets.",
+      "columns": {
+        "gecko_id": "CoinGecko asset identifier (e.g., bitcoin).",
+        "day": "Date of snapshot.",
+        "total_flow_usd": "Net flow in USD (positive = inflow, negative = outflow).",
+        "ingest_time": "Time when the row was ingested into the warehouse."
+      },
+      "primary_key": ["gecko_id", "day"]
+    }
   }
 }

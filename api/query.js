@@ -1,9 +1,32 @@
-// api/query.js — Hosted LLM→SQL engine (Aave + Aerodrome)
-// Force Node runtime (pg won't run on Edge)
+// api/query.js — Hosted LLM→SQL (Aave + Aerodrome + Prices + clean.*)
+// runtime hint (Vercel/edge will ignore pg; keep node)
 export const config = { runtime: 'nodejs' };
 
 import { Pool } from 'pg';
 import OpenAI from 'openai';
+
+import { guardSql } from '../lib/guard.js';
+import { fetchSchema } from '../lib/schema.js';
+import {
+  planQuery,
+  retryPlan,
+  buildPrimaryPrompt,   // kept exported
+  buildRetryPrompt,     // kept exported
+  generateAnswer
+} from '../lib/instructions.js';
+
+// ---------------- Local helpers ----------------
+function normalizeQuestion(s = '') { return String(s).replace(/\s+/g, ' ').trim(); }
+function extractSymbolFromText(s = '') {
+  const re = /\b(BTC|ETH|XRP|USDT|BNB|SOL|USDC|DOGE|TRX|ADA|LINK|HYPE|USDE|SUI|BCH|XLM|AVAX|HBAR|CRO|LEO|LTC|WETH|DAI|WBTC)\b/i;
+  const m = String(s).match(re); return m ? m[1].toUpperCase() : null;
+}
+const normalizeSymbol = (sym='') => String(sym).trim().toUpperCase();
+const looksLikeLatest = (s='') => /\b(latest|current|now|most\s*recent)\b/i.test(s);
+const looksLikeAero = (s='') => /\b(aero|aerodrome)\b/i.test(s) || /\bdex\b/i.test(s);
+const looksLikePrices = (s='') => /\b(price|market\s*cap|volume)\b/i.test(s) ||
+  /\b(BTC|ETH|XRP|USDT|BNB|SOL|USDC|DOGE|TRX|ADA|LINK|HYPE|USDE|SUI|BCH|XLM|AVAX|HBAR|CRO|LEO|LTC)\b/i.test(s);
+function postProcessAnswer(s=''){ return String(s).replace(/\s+%/g,'%').replace(/\s+,/g,',').trim(); }
 
 // ---------- config ----------
 const DB_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 600000);
@@ -14,234 +37,83 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
 function send(res, status, obj) {
-  res.status(status).setHeader('content-type', 'application/json');
+  if (typeof res.status === 'function') {
+    res.status(status).setHeader('content-type', 'application/json');
+  } else {
+    res.statusCode = status;
+    res.setHeader('content-type', 'application/json');
+  }
   res.end(JSON.stringify(obj));
 }
 
-// ---------- tiny utils ----------
-const log = (...args) => {
-  if (process.env.DEBUG_SQL) console.log('[debug]', ...args);
-};
-function ensureLimit(sql, n = MAX_LIMIT) {
-  return /\blimit\s+\d+\b/i.test(sql) ? sql : `${sql.trim()}\nLIMIT ${n}`;
-}
-function normalizeQuestion(q = '') {
-  let out = String(q);
-  out = out.replace(/\butlizaiton\b|\butliza?tion\b|\butl?ization\b/gi, 'utilization');
-  out = out.replace(/\butilisation\b/gi, 'utilization');
-  out = out.replace(/\bbtc-?e?t?h?\b/gi, 'WETH');
-  return out.trim();
-}
-function normalizeSymbol(sym = '') {
-  const s = String(sym).trim().toUpperCase();
-  if (s === 'ETH') return 'WETH';
-  return s;
-}
-function extractSymbolFromText(q = '') {
-  const m = q.match(/\b(USDC|USDBC|WETH|ETH|CBETH|CBBTC|GHO|EURC|WEETH)\b/i);
-  return m ? normalizeSymbol(m[0]) : null;
-}
-function looksLikeLatest(q = '') {
-  return /\b(latest|most\s+recent|current)\b/i.test(q);
-}
-function looksLikeAero(q = '') {
-  return /\b(aero|aerodrome)\b/i.test(q) ||
-         (/\b(dex|amm)\b/i.test(q) && /\b(volume|fees?|tvl|tx|transactions?)\b/i.test(q));
-}
-function stripTimeFilterIfAny(sql) {
-  let out = sql;
-  out = out.replace(/AND\s+ts\s*>=\s*.+?(?=(\)|ORDER\s+BY|LIMIT|$))/is, '');
-  out = out.replace(
-    /WHERE\s+ts\s*>=\s*.+?(?=(\)|ORDER\s+BY|LIMIT|$))/is,
-    (m) => (/\bAND\b/i.test(m) ? m : 'WHERE 1=1 ')
-  );
-  return out;
-}
+const log = (...args) => { if (process.env.DEBUG_SQL) console.log('[debug]', ...args); };
 
-// --- heuristic fixer (kept for Aave paths) ---
-function tweakSqlHeuristics(sql, question = '') {
-  let s = String(sql || '');
-
-  // utilization is 0..1; convert obvious % thresholds (>= 85 -> >= 0.85)
-  s = s.replace(/(utilization\s*[<>]=?\s*)(\d+(\.\d+)?)/ig, (m, left, num) => {
-    const n = parseFloat(num);
-    if (isFinite(n) && n >= 1) return `${left}${(n / 100).toFixed(4)}`;
-    return m;
+// --- percentify / currency / counts / dates ---
+function percentifyRows(rows = []) {
+  return rows.map((row) => {
+    const out = { ...row };
+    for (const key of Object.keys(out)) {
+      const v = out[key];
+      if (typeof v === 'string' && /\d/.test(v) && v.trim().endsWith('%')) continue;
+      const num = (typeof v === 'number') ? v : (v != null && v !== '' ? Number(v) : NaN);
+      const looksPctKey = /(_pct|percent|pct|utilization|util|rate|ratio|share)\b/i.test(key);
+      if (!looksPctKey || !isFinite(num)) continue;
+      let percentVal;
+      if (num >= 0 && num <= 1) percentVal = num * 100;
+      else if (num > 1 && num <= 100) percentVal = num;
+      else continue;
+      out[key] = `${percentVal.toFixed(2)}%`;
+    }
+    return out;
   });
-
-  // Add hourly pre-agg if user talks about streak/hours but query lacks date_trunc('hour')
-  if (/\b(consecutive|streak|hours?)\b/i.test(question) && !/date_trunc\s*\(\s*'hour'/i.test(s)) {
-    if (/from\s+public\.market_data\b/i.test(s) && /utilization\b/i.test(s)) {
-      s = s.replace(
-        /from\s+public\.market_data\b/i,
-        "FROM (\n  SELECT date_trunc('hour', ts) AS hour, AVG(utilization) AS utilization,\n         protocol, symbol\n  FROM public.market_data\n  WHERE protocol='aave'\n  GROUP BY 1, protocol, symbol\n) h"
-      );
-      s = s.replace(/\bts\b/gi, 'hour');
-    }
-  }
-
-  // "at least 24 hours" guard
-  if (/\bat\s+least\s+24\b/i.test(question)) {
-    s = s.replace(/\bstreak_count\s*=\s*24\b/gi, 'streak_count >= 24');
-    s = s.replace(/\bhours\s*=\s*24\b/gi,        'hours >= 24');
-  }
-
-  // rolling p75 patch (Aave hourly)
-  const aliasMatch = s.match(/from\s*\(\s*select\s*date_trunc\(\s*'hour'\s*,\s*ts\)\s+as\s+hour[\s\S]+?\)\s+([a-z_][a-z0-9_]*)/i);
-  const baseAlias = aliasMatch?.[1] || 'h';
-  const hasSymbolRef = new RegExp(`\\b${baseAlias}\\s*\\.\\s*symbol\\b`, 'i').test(s) || /\bsymbol\b/i.test(s);
-
-  s = s.replace(
-    /percentile_cont\s*\(\s*0\s*\.\s*?75\s*\)\s*within\s+group\s*\(\s*order\s+by\s+([a-z_][a-z0-9_\.]*)\s*\)\s*over\s*\([^)]*\)/ig,
-    (_m, orderCol) => {
-      const colOnly = orderCol.includes('.') ? orderCol.split('.').pop() : orderCol;
-      const symPred = hasSymbolRef ? `AND h2.symbol = ${baseAlias}.symbol` : '';
-      return `(
-  SELECT percentile_cont(0.75) WITHIN GROUP (ORDER BY h2.${colOnly})
-  FROM (
-    SELECT date_trunc('hour', ts) AS hour, symbol, protocol, AVG(utilization) AS util
-    FROM public.market_data
-    WHERE protocol='aave'
-      AND ts >= NOW() - INTERVAL '6 months'
-    GROUP BY 1,2,3
-  ) h2
-  WHERE h2.hour BETWEEN ${baseAlias}.hour - INTERVAL '30 days' AND ${baseAlias}.hour
-  ${symPred}
-)`;
-    }
-  );
-
-  return s;
 }
-
-// ---- SAFE SQL GUARD ----
-function guardSql(sql, whitelistTables, whitelistColsByTable) {
-  let s = String(sql || '').trim();
-  if (s.endsWith(';')) s = s.slice(0, -1).trim();
-
-  const stripStrings = (text) => text.replace(/'(?:''|[^'])*'/g, (m) => ' '.repeat(m.length));
-  const sNoStrings = stripStrings(s);
-
-  if (!/^\s*(select|with)\b/i.test(sNoStrings)) throw new Error('Only SELECT (or WITH ... SELECT) statements are allowed.');
-  if (sNoStrings.includes(';')) throw new Error('Multiple statements are not allowed.');
-  if (/\b(update|insert|delete|drop|alter|truncate|create|grant|revoke|copy|vacuum|analyze)\b/i.test(sNoStrings)) {
-    throw new Error('Write/DDL statements are not allowed.');
-  }
-  if (/(--|\/\*)/.test(sNoStrings)) throw new Error('SQL comments are not allowed.');
-
-  const normalizeTable = (t) => t.replace(/^public\./i, '').toLowerCase();
-
-  // collect derived aliases & CTE names
-  const aliasSet = new Set();
-  {
-    const aliasRegex = /\)\s+([a-z_][a-z0-9_]*)/gi; // ") alias"
-    let m; while ((m = aliasRegex.exec(sNoStrings))) aliasSet.add(m[1].toLowerCase());
-  }
-  {
-    const cteRegex = /(?:^|\bwith|,)\s*([a-z_][a-z0-9_]*)\s*(?:\([^)]+\))?\s+as\s*\(/gi;
-    let m; while ((m = cteRegex.exec(sNoStrings))) aliasSet.add(m[1].toLowerCase());
-  }
-
-  const allowedSrfs = new Set(['generate_series', 'unnest']);
-  const tableCandidates = new Set();
-  {
-    const fromJoinRegex = /\b(?:from|join)\s+([a-z_][a-z0-9_]*(?:\s*\.\s*[a-z_][a-z0-9_]*)?)(\s*\(|\s|$)/gi;
-    let m;
-    while ((m = fromJoinRegex.exec(sNoStrings))) {
-      const raw = m[1].replace(/\s+/g, '');
-      const looksFunc = /\(/.test(m[2] || '');
-      const base = raw.split('.')[0].toLowerCase();
-      if (looksFunc && allowedSrfs.has(base)) continue;
-      const candidate = normalizeTable(raw);
-      if (!aliasSet.has(candidate)) tableCandidates.add(candidate);
-    }
-  }
-  {
-    const qualColRegex = /\b([a-z_][a-z0-9_]*(?:\s*\.\s*[a-z_][a-z0-9_]*)?)\s*\.\s*[a-z_][a-z0-9_]*/gi;
-    let m;
-    while ((m = qualColRegex.exec(sNoStrings))) {
-      const qualifier = m[1].replace(/\s+/g, '');
-      if (qualifier.includes('.')) {
-        const parts = qualifier.split('.');
-        const tbl = normalizeTable(
-          `${parts.length === 2 ? parts[0] : parts[parts.length - 2]}.${parts[parts.length - 1]}`
-        );
-        if (!aliasSet.has(tbl)) tableCandidates.add(tbl);
-      }
-    }
-  }
-
-  for (const t of tableCandidates) {
-    if (t && !whitelistTables.has(t)) throw new Error(`Table not allowed: ${t}`);
-  }
-
-  // fully-qualified column allowlisting
-  {
-    const fqCols = sNoStrings.match(/\b([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)\s*\.\s*([a-z_][a-z0-9_]*)/gi) || [];
-    for (const ref of fqCols) {
-      const parts = ref.split('.');
-      let tbl, col;
-      if (parts.length >= 3) { // schema.table.col
-        tbl = parts[parts.length - 2].toLowerCase();
-        col = parts[parts.length - 1].toLowerCase();
-      } else {
-        tbl = parts[0].toLowerCase();
-        col = parts[1].toLowerCase();
-      }
-      tbl = tbl.replace(/^public\./i, '');
-      if (allowedSrfs.has(tbl)) continue;
-      if (aliasSet.has(tbl)) continue;
-
-      const allowedCols = whitelistColsByTable.get(tbl);
-      if (allowedCols && !allowedCols.has(col)) {
-        throw new Error(`Column not allowed: ${tbl}.${col}`);
-      }
-    }
-  }
-
-  return ensureLimit(s);
+const trimTrailingZeros = s => s.replace(/(\.\d*[1-9])0+$|\.0+$/,'$1');
+const fmtAbbr = (num, d, suf) => trimTrailingZeros((num / d).toFixed(2)) + suf;
+function formatUSD(n) {
+  const num = typeof n === 'number' ? n : Number(n);
+  if (!isFinite(num)) return n;
+  const abs = Math.abs(num);
+  if (abs >= 1e12) return `$${fmtAbbr(num, 1e12, 'T')}`;
+  if (abs >= 1e9)  return `$${fmtAbbr(num, 1e9,  'B')}`;
+  if (abs >= 1e6)  return `$${fmtAbbr(num, 1e6,  'M')}`;
+  if (abs >= 1e3)  return `$${fmtAbbr(num, 1e3,  'K')}`;
+  return `$${trimTrailingZeros(num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }))}`;
 }
-
-// ---------- schema allowlist (now includes Aerodrome) ----------
-let schemaCache = null;
-async function fetchSchema() {
-  if (schemaCache) return schemaCache;
-  const client = await pool.connect();
+function scaleCurrencyFields(rows = []) {
+  const usdLike = /(usd|tvl_usd|volume_usd|fees_usd|amount_usd|value_usd)$/i;
+  return rows.map(r => {
+    const out = { ...r };
+    for (const k of Object.keys(out)) if (usdLike.test(k)) out[k] = formatUSD(out[k]);
+    return out;
+  });
+}
+function formatCount(n) {
+  const num = typeof n === 'number' ? n : Number(n);
+  if (!isFinite(num)) return n;
+  const abs = Math.abs(num);
+  if (abs >= 1e9) return `${trimTrailingZeros((num/1e9).toFixed(2))}B`;
+  if (abs >= 1e6) return `${trimTrailingZeros((num/1e6).toFixed(2))}M`;
+  return num.toLocaleString('en-US');
+}
+function scaleCountFields(rows = []) {
+  const countLike = /(tx(_)?count|trades?|txs?)$/i;
+  return rows.map(r => {
+    const out = { ...r };
+    for (const k of Object.keys(out)) if (countLike.test(k)) out[k] = formatCount(out[k]);
+    return out;
+  });
+}
+function englishDate(d) {
   try {
-    const { rows } = await client.query(
-      `SELECT table_name, column_name
-       FROM information_schema.columns
-       WHERE table_schema='public'
-         AND table_name IN ('market_data','market_data_hourly','aero_protocol_daily')
-       ORDER BY table_name, ordinal_position;`
-    );
-    const byTable = new Map();
-    for (const r of rows) {
-      const t = r.table_name.toLowerCase();
-      if (!byTable.has(t)) byTable.set(t, new Set());
-      byTable.get(t).add(r.column_name.toLowerCase());
-    }
-    const tables = new Set(Array.from(byTable.keys()));
-    const doc = [
-      `public.market_data(` +
-      `protocol text, symbol text, supply numeric, borrows numeric, available numeric, ` +
-      `supply_apy numeric, borrow_apy numeric, utilization numeric, ts timestamptz)`,
-      `public.market_data_hourly(` +
-      `ts timestamptz, protocol text, symbol text, utilization numeric, supply numeric, ` +
-      `borrows numeric, available numeric, supply_apy numeric, borrow_apy numeric, n_rows integer)`,
-      `public.aero_protocol_daily(` +
-      `date_utc date, volume_usd numeric, fees_usd numeric, tvl_usd numeric, tx_count bigint, inserted_at timestamptz)`
-    ].join('\n');
-
-    schemaCache = { tables, colsByTable: byTable, doc };
-    return schemaCache;
-  } finally {
-    client.release();
-  }
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return d;
+    return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+  } catch { return d; }
 }
 
-// ---------- handler ----------
 export default async function handler(req, res) {
   if (req.method !== 'POST') return send(res, 405, { ok: false, error: 'Use POST' });
 
@@ -250,7 +122,6 @@ export default async function handler(req, res) {
   const referer = req.headers.referer || req.headers.origin || '';
   let sameOrigin = false;
   try { sameOrigin = !!referer && new URL(referer).host === host; } catch { sameOrigin = false; }
-
   const svcKey = req.headers['x-service-key'] || '';
   const requiredKey = process.env.SERVICE_API_KEY || '';
   if (!sameOrigin && (!svcKey || svcKey !== requiredKey)) {
@@ -264,225 +135,168 @@ export default async function handler(req, res) {
   if (!rawQuestion) return send(res, 400, { ok:false, error:'Missing "question"' });
   const question = normalizeQuestion(rawQuestion);
 
+  // minimal response switch (answer-only)
+  const minimal =
+    body?.minimal === true ||
+    String(req.headers['x-minimal'] || '').trim().toLowerCase() === '1';
+
   // DB probe
   try {
     const c = await pool.connect();
-    try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); await c.query('SELECT 1'); }
-    finally { c.release(); }
+    try {
+      await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`);
+      await c.query('SELECT 1');
+    } finally { c.release(); }
   } catch (e) {
     return send(res, 500, { ok:false, error:`DB error: ${e.message}` });
   }
 
-  const aeroQuestion = looksLikeAero(question);
+  // --------- Fast paths (public.*) ---------
+  const aeroQ = looksLikeAero(question);
+  const pricesQ = looksLikePrices(question);
+  const maybeSymbol = extractSymbolFromText(question);
 
-  // fast path for "latest"
-  if (looksLikeLatest(question)) {
-    if (aeroQuestion) {
-      const latestAeroSql = `
-        SELECT date_utc, volume_usd, fees_usd, tvl_usd, tx_count
-        FROM public.aero_protocol_daily
-        ORDER BY date_utc DESC
-        LIMIT 1
-      `;
-      try {
-        const c = await pool.connect();
-        let rows;
-        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestAeroSql)).rows; }
-        finally { c.release(); }
-        const r = rows[0];
-        return send(res, 200, {
-          ok: true,
-          answer: r
-            ? `Latest Aerodrome day (${r.date_utc}): volume $${Number(r.volume_usd).toLocaleString()}, fees $${Number(r.fees_usd).toLocaleString()}, TVL $${Number(r.tvl_usd).toLocaleString()}, tx ${Number(r.tx_count).toLocaleString()}.`
-            : 'No Aerodrome rows found.',
-          sql: latestAeroSql.trim(),
-          rows
-        });
-      } catch (e) {
-        return send(res, 500, { ok:false, error:`SQL error: ${e.message}` });
-      }
-    } else {
-      const sym = extractSymbolFromText(question) || 'USDC';
-      const symbol = normalizeSymbol(sym);
-      const latestSql = `
-        SELECT ts, utilization, ROUND(utilization*100,2) AS utilization_pct
-        FROM public.market_data
-        WHERE protocol='aave' AND symbol='${symbol}'
-        ORDER BY ts DESC
-        LIMIT 1
-      `;
-      try {
-        const c = await pool.connect();
-        let rows;
-        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestSql)).rows; }
-        finally { c.release(); }
-        const r = rows[0];
-        return send(res, 200, {
-          ok: true,
-          answer: r ? `Latest ${symbol} utilization is ${Number(r.utilization).toFixed(8)}.` : 'No results for that query.',
-          sql: latestSql.trim(),
-          rows
-        });
-      } catch (e) {
-        return send(res, 500, { ok:false, error:`SQL error: ${e.message}`, sql: latestSql.trim() });
-      }
+  if (looksLikeLatest(question) && pricesQ && maybeSymbol) {
+    const symbol = normalizeSymbol(maybeSymbol);
+    const latestPriceSql = `
+      SELECT asset_id, ts, price, market_cap, total_volume
+      FROM public.token_prices
+      WHERE asset_id='${symbol}'
+      ORDER BY ts DESC
+      LIMIT 1
+    `;
+    try {
+      const c = await pool.connect();
+      let rows;
+      try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestPriceSql)).rows; }
+      finally { c.release(); }
+      const r = rows[0];
+      const answer = r
+        ? `Latest ${symbol} (${englishDate(r.ts)}): price ${formatUSD(r.price)}, market cap ${formatUSD(r.market_cap)}, volume ${formatUSD(r.total_volume)}.`
+        : `No ${symbol} rows found.`;
+      if (minimal) return send(res, 200, { ok: true, answer });
+      return send(res, 200, { ok: true, answer, sql: latestPriceSql.trim(), rows });
+    } catch (e) {
+      return send(res, 500, { ok:false, error:`SQL error: ${e.message}` });
     }
   }
 
-  // LLM → SQL (hard-prompt) with strict JSON
+  if (looksLikeLatest(question) && aeroQ) {
+    const latestAeroSql = `
+      SELECT date_utc, volume_usd, fees_usd, tvl_usd, tx_count
+      FROM public.aero_protocol_daily
+      ORDER BY date_utc DESC
+      LIMIT 1
+    `;
+    try {
+      const c = await pool.connect();
+      let rows;
+      try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestAeroSql)).rows; }
+      finally { c.release(); }
+      const r = rows[0];
+      const answer = r
+        ? `Latest Aerodrome day (${englishDate(r.date_utc)}): volume ${formatUSD(r.volume_usd)}, fees ${formatUSD(r.fees_usd)}, TVL ${formatUSD(r.tvl_usd)}, tx ${formatCount(r.tx_count)}.`
+        : 'No Aerodrome rows found.';
+      if (minimal) return send(res, 200, { ok: true, answer });
+      return send(res, 200, { ok: true, answer, sql: latestAeroSql.trim(), rows });
+    } catch (e) {
+      return send(res, 500, { ok:false, error:`SQL error: ${e.message}` });
+    }
+  }
+
+  // Latest Aave utilization (public.market_data)
+  if (looksLikeLatest(question) && !aeroQ && !pricesQ) {
+    const sym = extractSymbolFromText(question) || 'USDC';
+    const symbol = normalizeSymbol(sym);
+    const latestSql = `
+      SELECT ts, utilization, ROUND(utilization*100,2) AS utilization_pct
+      FROM public.market_data
+      WHERE protocol='aave' AND symbol='${symbol}'
+      ORDER BY ts DESC
+      LIMIT 1
+    `;
+    try {
+      const c = await pool.connect();
+      let rows;
+      try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestSql)).rows; }
+      finally { c.release(); }
+      const r = rows[0];
+      const answer = r
+        ? `Latest ${symbol} utilization is ${Number(r.utilization_pct).toFixed(2)}%.`
+        : 'No results for that query.';
+      if (minimal) return send(res, 200, { ok: true, answer });
+      return send(res, 200, { ok: true, answer, sql: latestSql.trim(), rows });
+    } catch (e) {
+      return send(res, 500, { ok:false, error:`SQL error: ${e.message}`, sql: latestSql.trim() });
+    }
+  }
+
+  // ---- Planner stage (LLM → ONE SELECT over whitelisted schema) ----
   if (!process.env.OPENAI_API_KEY) return send(res, 500, { ok:false, error:'OPENAI_API_KEY not set' });
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const { tables, colsByTable, doc } = await fetchSchema(pool); // tables is a Set of "schema.table"
 
-  const { tables, colsByTable, doc } = await fetchSchema();
-
-  let rawGen;
+  let plan;
   try {
-    const gen = await openai.chat.completions.create({
-      model: 'gpt-5',
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-`Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the schema below.
-
-Router rules:
-• If the user asks about Aerodrome (mentions "aero", "aerodrome", or DEX-level volume/fees/TVL/tx), use public.aero_protocol_daily:
-    - date_utc is a DATE (UTC day); use it for all date filters and grouping.
-    - Common derived metric: fee_rate_pct = (fees_usd / NULLIF(volume_usd,0)) * 100.
-• Otherwise (Aave utilization/supply/borrow/etc.), use public.market_data_hourly for time-window summaries and moving stats;
-  use public.market_data only for true “latest” single readings.
-
-General rules:
-• ONE statement total (SELECT or WITH ... SELECT). No semicolons. CTEs allowed.
-• When joining Aave to Aerodrome daily, first aggregate Aave hourly to daily: date_trunc('day', ts)::date AS date_utc; then JOIN on date_utc.
-• For windows ('7 days', etc.) with Aave, add ts >= NOW() - INTERVAL '<window>' (prefer hourly table).
-• utilization is 0..1; interpret percentages (e.g., 85% -> 0.85).
-• Avoid percentile_cont/disc with OVER(); for rolling percentiles, pre-aggregate hourly and/or use correlated subqueries.
-• Return STRICT JSON only.
-
-Whitelisted schema:
-${doc}`
-        },
-        { role: 'user', content: `Question: ${question}\nRespond ONLY with JSON containing a single key "sql".` }
-      ],
-    });
-    rawGen = gen.choices?.[0]?.message?.content || '{}';
+    plan = await planQuery(openai, question, doc);
   } catch (e) {
-    return send(res, 500, { ok:false, error:`LLM error: ${e.message}` });
+    return send(res, 500, { ok:false, error:`LLM planning error: ${e.message}` });
   }
 
-  // Parse JSON robustly
-  let sql;
-  try {
-    const obj = JSON.parse(rawGen);
-    sql = String(obj.sql || '').trim();
-  } catch {
-    const match = rawGen.match(/\{[\s\S]*\}/);
-    if (match) {
-      try { sql = String(JSON.parse(match[0]).sql || '').trim(); } catch {}
-    }
-  }
-  if (!sql) return send(res, 500, { ok:false, error:'LLM returned non-JSON', raw: rawGen });
-  if (!/^\s*(select|with)\b/i.test(sql)) return send(res, 400, { ok:false, error:'Only SELECT/CTE allowed', sql });
-
-  sql = tweakSqlHeuristics(sql, question);
-
-  // Guard & run (with retry for specific syntax issues)
+  // Guard & run
+  let plannedSql = plan.sql;
   let safeSql;
   try {
-    safeSql = guardSql(sql, tables, colsByTable);
+    safeSql = guardSql(plannedSql, tables, colsByTable, MAX_LIMIT);
   } catch (e) {
-    log('guard blocked:', sql);
-    return send(res, 400, { ok:false, error: e.message, sql });
+    return send(res, 400, { ok:false, error: e.message, sql: plannedSql, plan });
   }
 
   let rows;
   try {
     const c2 = await pool.connect();
-    try { await c2.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c2.query(safeSql)).rows; }
-    finally { c2.release(); }
+    try {
+      await c2.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`);
+      rows = (await c2.query(safeSql)).rows;
+    } finally { c2.release(); }
   } catch (err) {
     const msg = String(err?.message || '');
-    const needsRetry =
+    const retryable =
       /syntax error/i.test(msg) ||
       /OVER is not supported for ordered-set aggregate/i.test(msg) ||
       /percentile_(cont|disc).*OVER/i.test(msg);
 
-    if (!needsRetry) return send(res, 500, { ok:false, error:`SQL error: ${msg}`, sql: safeSql });
+    if (!retryable) return send(res, 500, { ok:false, error:`SQL error: ${msg}`, sql: safeSql, plan });
 
-    // Retry with adjusted guidance
-    let raw2;
+    // retry with a new plan
     try {
-      const regen = await openai.chat.completions.create({
-        model: 'gpt-5',
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-`Regenerate a SINGLE Postgres query as JSON {"sql":"..."} that avoids the failing construct.
+      const plan2 = await retryPlan(openai, question, safeSql, msg, doc);
+      plannedSql = plan2.sql;
+      safeSql = guardSql(plannedSql, tables, colsByTable, MAX_LIMIT);
 
-Hard rules:
-• For Aerodrome use public.aero_protocol_daily and date_utc.
-• For Aave: prefer public.market_data_hourly for windowed summaries; public.market_data only for true "latest".
-• No percentile_cont/disc with OVER(); use correlated subqueries if needed.
-• You MAY use CTEs; one statement only; no semicolons.
-• Return STRICT JSON only.`
-          },
-          { role: 'user', content: `Original question:\n${question}` },
-          { role: 'assistant', content: `Previous SQL:\n${safeSql}\n\nError:\n${msg}` }
-        ]
-      });
-      raw2 = regen.choices?.[0]?.message?.content || '{}';
+      const c3 = await pool.connect();
+      try {
+        await c3.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`);
+        rows = (await c3.query(safeSql)).rows;
+      } finally { c3.release(); }
+
+      plan = plan2; // prefer newer presentation
     } catch (e2) {
-      return send(res, 500, { ok:false, error:`Retry LLM error: ${e2.message}`, sql: safeSql });
+      return send(res, 500, { ok:false, error:`Retry plan error: ${e2.message}`, sql: plannedSql, plan });
     }
-
-    let sql2;
-    try {
-      sql2 = String(JSON.parse(raw2).sql || '').trim();
-    } catch {
-      const m2 = raw2.match(/\{[\s\S]*\}/);
-      if (m2) {
-        try { sql2 = String(JSON.parse(m2[0]).sql || '').trim(); } catch {}
-      }
-    }
-    if (!sql2) return send(res, 500, { ok:false, error:'Retry model returned non-JSON', raw: raw2 });
-
-    const patched2 = tweakSqlHeuristics(sql2, question);
-    try {
-      safeSql = guardSql(patched2, tables, colsByTable);
-    } catch (e) {
-      return send(res, 400, { ok:false, error: e.message, sql: patched2 });
-    }
-
-    const c3 = await pool.connect();
-    try { await c3.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c3.query(safeSql)).rows; }
-    finally { c3.release(); }
   }
 
-  // If empty with a time filter on Aave hourly, retry without the time filter
-  if (rows.length === 0 && /ts\s*>=/i.test(safeSql)) {
-    const fallback = stripTimeFilterIfAny(safeSql);
-    const c4 = await pool.connect();
-    try { await c4.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c4.query(fallback)).rows; }
-    finally { c4.release(); }
-  }
-
-  // Summarize (short)
-  let answer = '';
+  // ---- Answer stage (LLM formats result) ----
   try {
-    const sum = await openai.chat.completions.create({
-      model: 'gpt-5',
-      messages: [
-        { role: 'system', content: 'Answer in 1–2 sentences. Use only numbers from the rows. No tables.' },
-        { role: 'user', content: `Question: ${rawQuestion}` },
-        { role: 'assistant', content: `Rows: ${JSON.stringify(rows).slice(0, 100000)}` }
-      ]
-    });
-    answer = sum.choices?.[0]?.message?.content?.trim() || '';
-  } catch (_) {}
-
-  return send(res, 200, { ok: true, answer, sql: safeSql, rows });
+    const prettyRows = percentifyRows(scaleCountFields(scaleCurrencyFields(rows)));
+    const answer = await generateAnswer(openai, rawQuestion, prettyRows, plan.presentation);
+    if (minimal) return send(res, 200, { ok: true, answer });
+    return send(res, 200, { ok: true, answer, sql: safeSql, rows });
+  } catch {
+    const fallbackAnswer = postProcessAnswer(`Returned ${rows.length} row(s).`);
+    if (minimal) return send(res, 200, { ok: true, answer: fallbackAnswer });
+    return send(res, 200, { ok: true, answer: fallbackAnswer, sql: safeSql, rows });
+  }
 }
+
+BASE="https://YOUR_URL/api/query"
+KEY="YOUR_SERVICE_KEY"
