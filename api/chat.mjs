@@ -1,5 +1,4 @@
 // Minimal connectivity check — always returns JSON
-export const config = { runtime: 'nodejs18.x' };
 
 function json(res, status, body) {
   res.statusCode = status;
