@@ -1,0 +1,60 @@
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Node / builds
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+.turbo/
+.pnpm-store/
+
+# Framework outputs
+.next/
+.vercel/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env & secrets
+.env
+.env.*
+*.env
+*.env.*
+.envrc
+*.key
+*.pem
+*.p12
+*.crt
+*.cer
+*.der
+*.keystore
+*.jks
+*.pfx
+.gcp-credentials.json
+aws-credentials*
+service-account*.json
+id_rsa
+id_ed25519
+
+# Local DB / caches
+*.sqlite
+*.sqlite-journal
+tmp/
+.cache/
+
+# Misc
+*.swp
+*.swo
+*.orig
+*.patch
+
+# Repo-specific
+.git-redactions.txt
