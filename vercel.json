@@ -1,6 +1,0 @@
-{
-  "version": 2,
-  "functions": {
-    "api/*.mjs": { "runtime": "nodejs18.x", "memory": 1024, "maxDuration": 30 }
-  }
-}
