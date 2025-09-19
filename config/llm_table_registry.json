@@ -1,0 +1,108 @@
+{
+  "clean.protocol_chain_tvl_daily": {
+    "description": "Daily total value locked (TVL) by protocol and chain, normalized to USD.",
+    "columns": {
+      "protocol_id": "Unique identifier for the protocol.",
+      "chain": "Blockchain network where the protocol is deployed.",
+      "series_type": "Type of TVL series tracked (e.g., total, staked, borrowed).",
+      "ts": "Date of the snapshot (YYYY-MM-DD).",
+      "total_liquidity_usd": "Total value locked in USD across the protocol on the given chain.",
+      "ingest_time": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["protocol_id", "chain", "series_type", "ts"]
+  },
+  "clean.etf_flows_daily": {
+    "description": "Daily net flows of crypto ETFs, showing capital inflows and outflows in USD terms.",
+    "columns": {
+      "gecko_id": "CoinGecko identifier for the asset or ETF.",
+      "day": "Date of the snapshot (YYYY-MM-DD).",
+      "total_flow_usd": "Net flow value in USD for the ETF (positive for inflows, negative for outflows).",
+      "inserted_at": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["gecko_id", "day"]
+  },
+  "clean.lending_market_history": {
+    "description": "Historical time-series of lending market activity, including supply, borrow, debt ceiling, and APY metrics for each market.",
+    "columns": {
+      "market_id": "Unique identifier for the lending market.",
+      "ts": "Unix timestamp representing the snapshot time.",
+      "project": "Name of the protocol or project operating the lending market.",
+      "chain": "Blockchain network where the market resides.",
+      "symbol": "Token symbol associated with the market (e.g., DAI, USDC).",
+      "total_supply_usd": "Total value supplied in the market, expressed in USD.",
+      "total_borrow_usd": "Total value borrowed from the market, expressed in USD.",
+      "debt_ceiling_usd": "Maximum allowable debt or borrow cap for the market, in USD.",
+      "apy_base_supply": "Base annualized yield earned by suppliers (excluding rewards).",
+      "apy_reward_supply": "Reward portion of annualized yield for suppliers.",
+      "apy_base_borrow": "Base annualized interest rate charged to borrowers (excluding rewards).",
+      "apy_reward_borrow": "Reward portion of annualized yield for borrowers.",
+      "inserted_at": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["market_id", "ts"]
+  },
+  "clean.stablecoin_mcap_by_peg_daily": {
+    "description": "Daily stablecoin market capitalization, categorized by peg currency.",
+    "columns": {
+      "day": "Date of the snapshot (YYYY-MM-DD).",
+      "peg": "Pegged currency code (e.g., USD, EUR, JPY).",
+      "amount_usd": "Total stablecoin market capitalization in USD terms.",
+      "ingest_time": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["day", "peg"]
+  },
+  "clean.protocol_chain_token_holdings_daily": {
+    "description": "Daily snapshot of token holdings by protocol across different chains, with values normalized to USD.",
+    "columns": {
+      "protocol_id": "Unique identifier for the protocol.",
+      "chain": "Blockchain network where the holdings are located.",
+      "series_type": "Type of series being tracked (e.g., reserves, treasury, or other categories).",
+      "ts": "Date of the snapshot (YYYY-MM-DD).",
+      "token_symbol": "Symbol of the token held by the protocol.",
+      "amount_usd": "Value of the holdings in USD terms.",
+      "inserted_at": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["protocol_id", "chain", "series_type", "ts", "token_symbol"]
+  },
+  "clean.bridge_volume_overview": {
+    "description": "Daily aggregated totals of bridge activity across all chains and bridges.",
+    "columns": {
+      "day": "Date of the aggregated snapshot (YYYY-MM-DD).",
+      "deposit_usd": "Total USD value deposited across all bridges.",
+      "withdraw_usd": "Total USD value withdrawn across all bridges.",
+      "deposit_txs": "Total number of deposit transactions across all bridges.",
+      "withdraw_txs": "Total number of withdrawal transactions across all bridges.",
+      "inserted_at": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["day"]
+  },
+  "clean.bridge_volume_daily": {
+    "description": "Daily breakdown of cross-chain bridge activity including USD volume and transaction counts.",
+    "columns": {
+      "chain": "Blockchain network associated with the bridge activity.",
+      "day": "Date of the aggregated snapshot (YYYY-MM-DD).",
+      "bridge_id": "Internal identifier for the specific bridge.",
+      "deposit_usd": "Total USD value deposited into the bridge on that day.",
+      "withdraw_usd": "Total USD value withdrawn from the bridge on that day.",
+      "deposit_txs": "Number of deposit transactions into the bridge.",
+      "withdraw_txs": "Number of withdrawal transactions from the bridge.",
+      "inserted_at": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["chain", "day", "bridge_id"]
+  },
+  "clean.cl_pool_hist": {
+    "description": "Historical time-series of pool-level metrics including TVL and APY for DeFi protocols.",
+    "columns": {
+      "pool_id": "Unique identifier for the liquidity pool.",
+      "ts": "Unix timestamp representing the snapshot time.",
+      "project": "Name of the protocol or project.",
+      "chain": "Blockchain network where the pool resides.",
+      "symbol": "Token symbol or pool asset symbol.",
+      "tvl_usd": "Total value locked in the pool, expressed in USD.",
+      "apy": "Annual percentage yield (APY) for the pool, including rewards if applicable.",
+      "apy_base": "Base APY excluding rewards or incentives.",
+      "url": "Link to the pool or project page.",
+      "inserted_at": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["pool_id", "ts"]
+  }
+}

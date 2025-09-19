@@ -1,4 +1,4 @@
-// api/query.js — Hosted LLM→SQL (Aave + Aerodrome + Prices + clean.*)
+// api/query.js — Hosted LLM→SQL (routes questions over registry-backed clean.* + any allowed tables)
 // Keep Node Serverless runtime on Vercel
 export const config = { runtime: 'nodejs' };
 
@@ -16,8 +16,9 @@ import {
 } from '../lib/instructions.js';
 
 // ---------------- Config ----------------
-const DB_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 600000);
+const DB_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 600_000);
 const MAX_LIMIT = 500;
+const ENABLE_FASTPATHS = String(process.env.ENABLE_FASTPATHS || '').trim() === '1';
 
 // ---- CORS (only needed if calling cross-origin) ----
 const ALLOW_ORIGIN = process.env.ALLOW_ORIGIN || '*';
@@ -32,7 +33,6 @@ function send(res, status, obj) {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
   res.setHeader('cache-control', 'no-store');
-  // Add CORS headers for all replies (harmless on same-origin)
   for (const [k, v] of Object.entries(CORS_HEADERS)) res.setHeader(k, v);
   res.end(JSON.stringify(obj));
 }
@@ -188,92 +188,99 @@ export default async function handler(req, res) {
       return send(res, 500, { ok:false, error:`DB error: ${e.message}` });
     }
 
-    // --------- Fast paths (public.*) ---------
-    const aeroQ = looksLikeAero(question);
-    const pricesQ = looksLikePrices(question);
-    const maybeSymbol = extractSymbolFromText(question);
+    // --------- Registry-backed schema (clean.* and friends) ---------
+    // fetchSchema now reads config/llm_table_registry.json (or LLM_TABLE_REGISTRY_PATH)
+    const { tables, colsByTable, doc } = await fetchSchema();
 
-    if (looksLikeLatest(question) && pricesQ && maybeSymbol) {
-      const symbol = normalizeSymbol(maybeSymbol);
-      const latestPriceSql = `
-        SELECT asset_id, ts, price, market_cap, total_volume
-        FROM public.token_prices
-        WHERE asset_id='${symbol}'
-        ORDER BY ts DESC
-        LIMIT 1
-      `;
-      try {
-        const c = await pool.connect();
-        let rows;
-        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestPriceSql)).rows; }
-        finally { c.release(); }
-        const r = rows[0];
-        const answer = r
-          ? `Latest ${symbol} (${englishDate(r.ts)}): price ${formatUSD(r.price)}, market cap ${formatUSD(r.market_cap)}, volume ${formatUSD(r.total_volume)}.`
-          : `No ${symbol} rows found.`;
-        if (minimal) return send(res, 200, { ok: true, answer });
-        return send(res, 200, { ok: true, answer, sql: latestPriceSql.trim(), rows });
-      } catch (e) {
-        return send(res, 500, { ok:false, error:`SQL error: ${e.message}` });
+    // --------- Optional fast paths (behind flag) ---------
+    if (ENABLE_FASTPATHS) {
+      const aeroQ = looksLikeAero(question);
+      const pricesQ = looksLikePrices(question);
+      const maybeSymbol = extractSymbolFromText(question);
+
+      // Latest price (example: public.token_prices view). Keep only if this table exists for you.
+      if (looksLikeLatest(question) && pricesQ && maybeSymbol) {
+        const symbol = normalizeSymbol(maybeSymbol);
+        const latestPriceSql = `
+          SELECT asset_id, ts, price, market_cap, total_volume
+          FROM public.token_prices
+          WHERE asset_id='${symbol}'
+          ORDER BY ts DESC
+          LIMIT 1
+        `;
+        try {
+          const c = await pool.connect();
+          let rows;
+          try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestPriceSql)).rows; }
+          finally { c.release(); }
+          const r = rows[0];
+          const answer = r
+            ? `Latest ${symbol} (${englishDate(r.ts)}): price ${formatUSD(r.price)}, market cap ${formatUSD(r.market_cap)}, volume ${formatUSD(r.total_volume)}.`
+            : `No ${symbol} rows found.`;
+          if (minimal) return send(res, 200, { ok: true, answer });
+          return send(res, 200, { ok: true, answer, sql: latestPriceSql.trim(), rows });
+        } catch (e) {
+          // fall through to planner on error instead of failing hard
+          log('fastpath price failed, falling back →', e.message);
+        }
       }
-    }
 
-    if (looksLikeLatest(question) && aeroQ) {
-      const latestAeroSql = `
-        SELECT date_utc, volume_usd, fees_usd, tvl_usd, tx_count
-        FROM public.aero_protocol_daily
-        ORDER BY date_utc DESC
-        LIMIT 1
-      `;
-      try {
-        const c = await pool.connect();
-        let rows;
-        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestAeroSql)).rows; }
-        finally { c.release(); }
-        const r = rows[0];
-        const answer = r
-          ? `Latest Aerodrome day (${englishDate(r.date_utc)}): volume ${formatUSD(r.volume_usd)}, fees ${formatUSD(r.fees_usd)}, TVL ${formatUSD(r.tvl_usd)}, tx ${formatCount(r.tx_count)}.`
-          : 'No Aerodrome rows found.';
-        if (minimal) return send(res, 200, { ok: true, answer });
-        return send(res, 200, { ok: true, answer, sql: latestAeroSql.trim(), rows });
-      } catch (e) {
-        return send(res, 500, { ok:false, error:`SQL error: ${e.message}` });
+      // Latest Aerodrome protocol day
+      if (looksLikeLatest(question) && aeroQ) {
+        const latestAeroSql = `
+          SELECT date_utc, volume_usd, fees_usd, tvl_usd, tx_count
+          FROM public.aero_protocol_daily
+          ORDER BY date_utc DESC
+          LIMIT 1
+        `;
+        try {
+          const c = await pool.connect();
+          let rows;
+          try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestAeroSql)).rows; }
+          finally { c.release(); }
+          const r = rows[0];
+          const answer = r
+            ? `Latest Aerodrome day (${englishDate(r.date_utc)}): volume ${formatUSD(r.volume_usd)}, fees ${formatUSD(r.fees_usd)}, TVL ${formatUSD(r.tvl_usd)}, tx ${formatCount(r.tx_count)}.`
+            : 'No Aerodrome rows found.';
+          if (minimal) return send(res, 200, { ok: true, answer });
+          return send(res, 200, { ok: true, answer, sql: latestAeroSql.trim(), rows });
+        } catch (e) {
+          log('fastpath aero failed, falling back →', e.message);
+        }
       }
-    }
 
-    // Latest Aave utilization (public.market_data)
-    if (looksLikeLatest(question) && !aeroQ && !pricesQ) {
-      const sym = extractSymbolFromText(question) || 'USDC';
-      const symbol = normalizeSymbol(sym);
-      const latestSql = `
-        SELECT ts, utilization, ROUND(utilization*100,2) AS utilization_pct
-        FROM public.market_data
-        WHERE protocol='aave' AND symbol='${symbol}'
-        ORDER BY ts DESC
-        LIMIT 1
-      `;
-      try {
-        const c = await pool.connect();
-        let rows;
-        try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestSql)).rows; }
-        finally { c.release(); }
-        const r = rows[0];
-        const answer = r
-          ? `Latest ${symbol} utilization is ${Number(r.utilization_pct).toFixed(2)}%.`
-          : 'No results for that query.';
-        if (minimal) return send(res, 200, { ok: true, answer });
-        return send(res, 200, { ok: true, answer, sql: latestSql.trim(), rows });
-      } catch (e) {
-        return send(res, 500, { ok:false, error:`SQL error: ${e.message}`, sql: latestSql.trim() });
+      // Latest Aave utilization (example: public.market_data)
+      if (looksLikeLatest(question) && !looksLikeAero(question) && !looksLikePrices(question)) {
+        const sym = extractSymbolFromText(question) || 'USDC';
+        const symbol = normalizeSymbol(sym);
+        const latestSql = `
+          SELECT ts, utilization, ROUND(utilization*100,2) AS utilization_pct
+          FROM public.market_data
+          WHERE protocol='aave' AND symbol='${symbol}'
+          ORDER BY ts DESC
+          LIMIT 1
+        `;
+        try {
+          const c = await pool.connect();
+          let rows;
+          try { await c.query(`SET statement_timeout = ${DB_TIMEOUT_MS}`); rows = (await c.query(latestSql)).rows; }
+          finally { c.release(); }
+          const r = rows[0];
+          const answer = r
+            ? `Latest ${symbol} utilization is ${Number(r.utilization_pct).toFixed(2)}%.`
+            : 'No results for that query.';
+          if (minimal) return send(res, 200, { ok: true, answer });
+          return send(res, 200, { ok: true, answer, sql: latestSql.trim(), rows });
+        } catch (e) {
+          log('fastpath aave failed, falling back →', e.message);
+        }
       }
-    }
+    } // end fastpaths
 
-    // ---- Planner stage (LLM → ONE SELECT over whitelisted schema) ----
-    const { tables, colsByTable, doc } = await fetchSchema(pool); // tables is a Set of "schema.table"
-
+    // ---- Planner stage (LLM → ONE SELECT over registry-whitelisted schema) ----
     let plan;
     try {
-      plan = await planQuery(openai, question, doc);
+      plan = await planQuery(getOpenAI(), question, doc);
     } catch (e) {
       return send(res, 500, { ok:false, error:`LLM planning error: ${e.message}` });
     }
@@ -305,7 +312,7 @@ export default async function handler(req, res) {
 
       // retry with a new plan
       try {
-        const plan2 = await retryPlan(openai, question, safeSql, msg, doc);
+        const plan2 = await retryPlan(getOpenAI(), question, safeSql, msg, doc);
         plannedSql = plan2.sql;
         safeSql = guardSql(plannedSql, tables, colsByTable, MAX_LIMIT);
 
@@ -324,7 +331,7 @@ export default async function handler(req, res) {
     // ---- Answer stage (LLM formats result) ----
     try {
       const prettyRows = percentifyRows(scaleCountFields(scaleCurrencyFields(rows)));
-      const answer = await generateAnswer(openai, rawQuestion, prettyRows, plan.presentation);
+      const answer = await generateAnswer(getOpenAI(), rawQuestion, prettyRows, plan.presentation);
       if (minimal) return send(res, 200, { ok: true, answer });
       return send(res, 200, { ok: true, answer, sql: safeSql, rows });
     } catch {
@@ -334,7 +341,6 @@ export default async function handler(req, res) {
     }
 
   } catch (err) {
-    // Final safety net: ALWAYS JSON
     return send(res, 500, { ok:false, error:`Unhandled server error: ${String(err?.message || err)}` });
   }
 }
