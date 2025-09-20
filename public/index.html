@@ -33,26 +33,35 @@
     const sqlEl = document.getElementById('sql');
     const rowsEl = document.getElementById('rows');
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    async function run(question) {
       answerEl.style.display = sqlEl.style.display = rowsEl.style.display = 'none';
       answerEl.textContent = sqlEl.textContent = rowsEl.textContent = '';
 
       submitBtn.disabled = true; submitBtn.textContent = 'Running…';
       try {
-        // Call the server route directly (same-origin bypass is handled in /api/query)
         const resp = await fetch('/api/query', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ question: textarea.value })
+          body: JSON.stringify({ question })
         });
+
+        if (!resp.ok) {
+          let errPayload = {};
+          try { errPayload = await resp.json(); } catch (_) {}
+          const msg = errPayload?.error || `HTTP ${resp.status}`;
+          throw new Error(msg);
+        }
+
         const data = await resp.json();
-        if (!data.ok) throw new Error(data.error || 'Query failed');
 
         answerEl.style.display = 'block';
         answerEl.textContent = `Answer:\n\n${data.answer || '(no summary)'}`;
 
-        if (data.sql) { sqlEl.style.display = 'block'; sqlEl.textContent = `SQL:\n\n${data.sql}`; }
+        if (data.sql) {
+          sqlEl.style.display = 'block';
+          sqlEl.textContent = `SQL:\n\n${data.sql}`;
+        }
+
         if (Array.isArray(data.rows)) {
           rowsEl.style.display = 'block';
           rowsEl.textContent = `Rows (first 10):\n\n${JSON.stringify(data.rows.slice(0,10), null, 2)}`;
@@ -63,13 +72,12 @@
       } finally {
         submitBtn.disabled = false; submitBtn.textContent = 'Ask';
       }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      run(textarea.value.trim());
     });
   </script>
 </body>
 </html>
-
-/lib/prompt.js
-/lib/guard.js
-/lib/tweaks.js
-/lib/text.js
-/lib/schema.js
