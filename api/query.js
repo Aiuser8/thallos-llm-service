@@ -43,6 +43,9 @@ function normalizeQuestion(s = '') {
 function postProcessAnswer(s = '') {
   return String(s).replace(/\s+%/g, '%').replace(/\s+,/g, ',').trim();
 }
+if (question.toLowerCase() === 'ping') {
+  return send(res, 200, { ok: true, answer: 'pong' });
+}
 
 // --- Format helpers ---
 const trimTrailingZeros = s => s.replace(/(\.\d*[1-9])0+$|\.0+$/, '$1');
