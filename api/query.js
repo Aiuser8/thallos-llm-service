@@ -33,32 +33,70 @@ export default async function handler(req, res) {
     // 1) Plan SQL
     let { sql } = await planQuery(openai, question);
 
-    // 2) Execute SQL
+    // 2) Execute SQL (with optional statement timeout)
     const pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: false }, // ok for Supabase pooler; add ?sslmode=require to URL too
     });
 
     let rows = [];
+    let sqlTried = sql;
+
+    const client = await pool.connect();
     try {
-      const r = await pool.query(sql);
-      rows = r.rows || [];
-    } catch (e) {
-      // 3) Retry once with error-aware planning
-      const retry = await retryPlan(openai, question, sql, String(e));
-      const r2 = await pool.query(retry.sql);
-      sql = retry.sql;
-      rows = r2.rows || [];
+      const ms = Number(process.env.DB_QUERY_TIMEOUT_MS || 180000);
+      await client.query(`SET statement_timeout TO ${ms}`);
+
+      // First attempt
+      try {
+        const r = await client.query(sql);
+        rows = r.rows || [];
+      } catch (e1) {
+        // Retry with error-aware planning
+        const retry = await retryPlan(openai, question, sql, String(e1));
+        sql = retry.sql;
+        sqlTried = sql;
+        // Second attempt
+        try {
+          const r2 = await client.query(sql);
+          rows = r2.rows || [];
+        } catch (e2) {
+          // Bubble precise DB error + which SQL failed
+          const err = new Error(`Query failed after retry: ${e2.message}`);
+          err.code = e2.code;
+          err.detail = e2.detail;
+          err.hint = e2.hint;
+          err.position = e2.position;
+          err.sql = sqlTried;
+          throw err;
+        }
+      }
     } finally {
+      client.release();
       await pool.end();
     }
 
-    // 4) Respond (JSON only)
+    // 3) Respond (JSON only)
     if (minimal) return res.status(200).json({ rows });
 
     const answer = await generateAnswer(openai, question, rows, presentationHint);
     return res.status(200).json({ sql, rows, answer });
+
   } catch (err) {
-    return res.status(500).json({ error: err?.message || String(err) });
+    // Clear, JSON-only error surface for Vercel & clients
+    const message = err?.message || String(err);
+    const payload = {
+      error: message,
+      db: {
+        code: err?.code,
+        detail: err?.detail,
+        hint: err?.hint,
+        position: err?.position,
+      },
+      sql: err?.sql, // which SQL failed (if any)
+      hint: "Check DATABASE_URL (host/db/role), ?sslmode=require, schema/table privileges, and request method/body.",
+    };
+    res.setHeader("content-type", "application/json");
+    return res.status(500).end(JSON.stringify(payload));
   }
 }
