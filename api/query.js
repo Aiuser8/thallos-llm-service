@@ -34,10 +34,18 @@ export default async function handler(req, res) {
     let { sql } = await planQuery(openai, question);
 
     // 2) Execute SQL (with optional statement timeout)
+// Build the pool from discrete params (avoids URL parsing quirks)
+const url = new URL(process.env.DATABASE_URL);
+
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
+  host: url.hostname,                                   // e.g. aws-1-us-east-2.pooler.supabase.com
+  port: Number(url.port || 5432),
+  user: decodeURIComponent(url.username),
+  password: decodeURIComponent(url.password),
+  database: url.pathname.replace(/^\//, ""),            // "postgres"
+  // Force TLS but skip CA validation to avoid SELF_SIGNED_CERT_IN_CHAIN
   ssl: { rejectUnauthorized: false },
-});    
+});
 
     let rows = [];
     let sqlTried = sql;
