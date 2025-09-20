@@ -23,6 +23,11 @@
       "pctvl_protocol_chain_series_ts_idx": {
         "columns": ["lower(protocol_id)", "chain", "series_type", "ts"],
         "description": "Supports protocol-focused queries across chains and over time, such as tracking one protocol’s liquidity history."
+      },
+      "pctvl_chain_series_ts_idx": {
+        "columns": ["chain", "series_type", "ts"],
+        "include": ["total_liquidity_usd", "protocol_id"],
+        "description": "Supports fast lookups when filtering directly on chain, series_type, and date ranges. Matches the model’s default query style without LOWER(), enabling efficient index-only scans for daily TVL by chain."
       }
     }
   },
