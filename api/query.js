@@ -43,9 +43,6 @@ function normalizeQuestion(s = '') {
 function postProcessAnswer(s = '') {
   return String(s).replace(/\s+%/g, '%').replace(/\s+,/g, ',').trim();
 }
-if (question.toLowerCase() === 'ping') {
-  return send(res, 200, { ok: true, answer: 'pong' });
-}
 
 // --- Format helpers ---
 const trimTrailingZeros = s => s.replace(/(\.\d*[1-9])0+$|\.0+$/, '$1');
@@ -165,6 +162,11 @@ export default async function handler(req, res) {
     const minimal =
       body?.minimal === true ||
       String(req.headers['x-minimal'] || '').trim().toLowerCase() === '1';
+
+    // ✅ ping fast-path (now safely inside handler)
+    if (question.toLowerCase() === 'ping') {
+      return send(res, 200, { ok: true, answer: 'pong' });
+    }
 
     // init clients
     let pool, openai;
