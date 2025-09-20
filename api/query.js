@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     // 2) Execute SQL (with optional statement timeout)
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { require: true, rejectUnauthorized: false }, // <- BOTH flags
+  ssl: { rejectUnauthorized: false },
 });    
 
     let rows = [];
