@@ -13,20 +13,39 @@ async function readJson(req) {
   const raw = Buffer.concat(chunks).toString("utf8") || "{}";
   try {
     return JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`Invalid JSON body: ${e.message}`);
+  } catch {
+    // Non-JSON caller (e.g., GET or webhook without body)
+    return {};
   }
 }
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") {
-      res.setHeader("Allow", "POST");
+    // Accept POST (JSON body) and GET (?q=...) to support webhooks/cron
+    if (req.method !== "POST" && req.method !== "GET") {
+      res.setHeader("Allow", "POST, GET");
       return res.status(405).json({ error: "Method Not Allowed" });
     }
 
-    const { question, minimal = false, presentationHint } = await readJson(req);
-    if (!question) return res.status(400).json({ error: "Missing 'question'" });
+    // Accept from JSON body OR query string (?q= / ?question=)
+    const urlObj = new URL(req.url, `https://${req.headers.host}`);
+    const qsQuestion = urlObj.searchParams.get("q") || urlObj.searchParams.get("question");
+
+    const body = await readJson(req);
+    const question = body?.question || qsQuestion;
+    const minimal =
+      body?.minimal === true || urlObj.searchParams.get("minimal") === "true";
+    const presentationHint = body?.presentationHint;
+
+    if (!question) {
+      return res.status(400).json({
+        error:
+          "Missing 'question'. Provide JSON body {\"question\":\"...\"} or use ?q= in the URL.",
+        exampleCurl:
+          `curl -H "content-type: application/json" -d '{"question":"What was Ethereum TVL on the most recent date?"}' ` +
+          `${urlObj.origin}${urlObj.pathname}`,
+      });
+    }
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -34,18 +53,18 @@ export default async function handler(req, res) {
     let { sql } = await planQuery(openai, question);
 
     // 2) Execute SQL (with optional statement timeout)
-// Build the pool from discrete params (avoids URL parsing quirks)
-const url = new URL(process.env.DATABASE_URL);
+    // Build the pool from discrete params (avoids URL parsing quirks in some envs)
+    const url = new URL(process.env.DATABASE_URL);
 
-const pool = new pg.Pool({
-  host: url.hostname,                                   // e.g. aws-1-us-east-2.pooler.supabase.com
-  port: Number(url.port || 5432),
-  user: decodeURIComponent(url.username),
-  password: decodeURIComponent(url.password),
-  database: url.pathname.replace(/^\//, ""),            // "postgres"
-  // Force TLS but skip CA validation to avoid SELF_SIGNED_CERT_IN_CHAIN
-  ssl: { rejectUnauthorized: false },
-});
+    const pool = new pg.Pool({
+      host: url.hostname, // e.g., aws-1-us-east-2.pooler.supabase.com
+      port: Number(url.port || 5432),
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      database: url.pathname.replace(/^\//, ""), // "postgres"
+      // Force TLS but relax CA validation to avoid SELF_SIGNED_CERT_IN_CHAIN in Vercel
+      ssl: { rejectUnauthorized: false },
+    });
 
     let rows = [];
     let sqlTried = sql;
@@ -90,7 +109,6 @@ const pool = new pg.Pool({
 
     const answer = await generateAnswer(openai, question, rows, presentationHint);
     return res.status(200).json({ sql, rows, answer });
-
   } catch (err) {
     // Clear, JSON-only error surface for Vercel & clients
     const message = err?.message || String(err);
@@ -104,7 +122,7 @@ const pool = new pg.Pool({
       },
       sql: err?.sql, // which SQL failed (if any)
       hint:
-        "Check DATABASE_URL (host/db/role), ?sslmode=require, schema/table privileges, and request method/body.",
+        "Check DATABASE_URL (host/db/role), ?sslmode=require (optional), schema/table privileges, and request method/body.",
     };
     res.setHeader("content-type", "application/json");
     return res.status(500).end(JSON.stringify(payload));
