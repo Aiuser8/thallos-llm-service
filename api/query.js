@@ -7,13 +7,7 @@ import OpenAI from 'openai';
 
 import { guardSql } from '../lib/guard.js';
 import { fetchSchema } from '../lib/schema.js';
-import {
-  planQuery,
-  retryPlan,
-  buildPrimaryPrompt,   // exported for tests/tools
-  buildRetryPrompt,     // exported for tests/tools
-  generateAnswer
-} from '../lib/instructions.js';
+import { planQuery, retryPlan, generateAnswer } from '../lib/instructions.js';
 
 // ---------------- Config ----------------
 const DB_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 600_000);
