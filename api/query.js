@@ -10,8 +10,6 @@ import { fetchSchema } from '../lib/schema.js';
 import {
   planQuery,
   retryPlan,
-  buildPrimaryPrompt,   // kept exported
-  buildRetryPrompt,     // kept exported
   generateAnswer
 } from '../lib/instructions.js';
 
@@ -333,7 +331,7 @@ export default async function handler(req, res) {
       const prettyRows = percentifyRows(scaleCountFields(scaleCurrencyFields(rows)));
       const answer = await generateAnswer(getOpenAI(), rawQuestion, prettyRows, plan.presentation);
       if (minimal) return send(res, 200, { ok: true, answer });
-      return send(res, 200, { ok: true, answer, sql: safeSql, rows });
+      return send(res, 200, { ok: true, answer: answer, sql: safeSql, rows });
     } catch {
       const fallbackAnswer = postProcessAnswer(`Returned ${rows.length} row(s).`);
       if (minimal) return send(res, 200, { ok: true, answer: fallbackAnswer });
