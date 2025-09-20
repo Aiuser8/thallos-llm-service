@@ -4,7 +4,7 @@
     "columns": {
       "protocol_id": "Unique identifier for the protocol.",
       "chain": "Blockchain network where the protocol is deployed.",
-      "series_type": "Type of TVL series tracked (e.g., total, staked, borrowed).",
+      "series_type": "Type of TVL series tracked (e.g., total, staked, borrowed). Note: some protocols use 'main' instead of 'total'.",
       "ts": "Date of the snapshot (YYYY-MM-DD).",
       "total_liquidity_usd": "Total value locked in USD across the protocol on the given chain.",
       "ingest_time": "Timestamp when the row was ingested into the warehouse."
@@ -28,6 +28,11 @@
         "columns": ["chain", "series_type", "ts"],
         "include": ["total_liquidity_usd", "protocol_id"],
         "description": "Supports fast lookups when filtering directly on chain, series_type, and date ranges. Matches the model’s default query style without LOWER(), enabling efficient index-only scans for daily TVL by chain."
+      }
+    },
+    "aliases": {
+      "series_type": {
+        "main": "total"
       }
     }
   },
