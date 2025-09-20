@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import pg from "pg";
 import { planQuery, retryPlan, generateAnswer } from "../lib/instructions.js";
 
-export const config = { runtime: "nodejs" };
+export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs", regions: ["iad1"] }
 
 // Read JSON safely whether req.body exists or not
 async function readJson(req) {
@@ -36,7 +36,9 @@ export default async function handler(req, res) {
     // 2) Execute SQL (with optional statement timeout)
     const pool = new pg.Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }, // ok for Supabase pooler; add ?sslmode=require to URL too
+      // For Supabase on Vercel, keep SSL and relax CA validation to avoid
+      // "self-signed certificate in certificate chain" while still using TLS.
+      ssl: { rejectUnauthorized: false },
     });
 
     let rows = [];
@@ -56,6 +58,7 @@ export default async function handler(req, res) {
         const retry = await retryPlan(openai, question, sql, String(e1));
         sql = retry.sql;
         sqlTried = sql;
+
         // Second attempt
         try {
           const r2 = await client.query(sql);
@@ -94,7 +97,8 @@ export default async function handler(req, res) {
         position: err?.position,
       },
       sql: err?.sql, // which SQL failed (if any)
-      hint: "Check DATABASE_URL (host/db/role), ?sslmode=require, schema/table privileges, and request method/body.",
+      hint:
+        "Check DATABASE_URL (host/db/role), ?sslmode=require, schema/table privileges, and request method/body.",
     };
     res.setHeader("content-type", "application/json");
     return res.status(500).end(JSON.stringify(payload));
