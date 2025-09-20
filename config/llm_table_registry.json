@@ -9,7 +9,22 @@
       "total_liquidity_usd": "Total value locked in USD across the protocol on the given chain.",
       "ingest_time": "Timestamp when the row was ingested into the warehouse."
     },
-    "primary_key": ["protocol_id", "chain", "series_type", "ts"]
+    "primary_key": ["protocol_id", "chain", "series_type", "ts"],
+    "indexes": {
+      "pctvl_ts_series_protocol_idx": {
+        "columns": ["ts", "series_type", "protocol_id"],
+        "description": "Optimizes time-based queries by date and series_type, such as daily leaderboards or time-series rollups."
+      },
+      "pctvl_chain_series_ts_inc_idx": {
+        "columns": ["lower(chain)", "series_type", "ts"],
+        "include": ["total_liquidity_usd", "protocol_id"],
+        "description": "Accelerates chain-specific lookups over time ranges, allowing index-only scans for TVL by chain queries."
+      },
+      "pctvl_protocol_chain_series_ts_idx": {
+        "columns": ["lower(protocol_id)", "chain", "series_type", "ts"],
+        "description": "Supports protocol-focused queries across chains and over time, such as tracking one protocol’s liquidity history."
+      }
+    }
   },
   "clean.etf_flows_daily": {
     "description": "Daily net flows of crypto ETFs, showing capital inflows and outflows in USD terms.",
