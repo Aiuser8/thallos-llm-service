@@ -1,223 +1,64 @@
-// lib/instructions.js — Unified planner + prompts + answer formatting utilities.
-// Uses config/llm_table_registry.json (or override via LLM_TABLE_REGISTRY_PATH)
+// api/query.js — Vercel Node serverless handler (ESM)
+import OpenAI from "openai";
+import pg from "pg";
+import { planQuery, retryPlan, generateAnswer } from "../lib/instructions.js";
 
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+export const config = { runtime: "nodejs" };
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DEFAULT_REGISTRY_PATH = path.resolve(__dirname, '../config/llm_table_registry.json');
-
-/* --------------------------- Registry / Doc loader --------------------------- */
-
-async function loadRegistry() {
-  const registryPath = process.env.LLM_TABLE_REGISTRY_PATH || DEFAULT_REGISTRY_PATH;
-  const raw = await fs.readFile(registryPath, 'utf8');
-  const json = JSON.parse(raw);
-  if (!json || typeof json !== 'object') {
-    throw new Error('Invalid table registry JSON: root must be an object');
-  }
-  return json;
-}
-
-export async function buildSchemaDoc() {
-  const registry = await loadRegistry();
-  const lines = [];
-  for (const [fqtn, meta] of Object.entries(registry)) {
-    lines.push(`TABLE ${fqtn}`);
-    if (meta.description) lines.push(meta.description);
-    lines.push('  columns:');
-    const cols = meta.columns || {};
-    for (const [col, desc] of Object.entries(cols)) {
-      lines.push(`    - ${col}: ${desc}`);
-    }
-    const pk = meta.primary_key || [];
-    if (pk.length) lines.push(`  primary_key: [${pk.join(', ')}]`);
-    lines.push('');
-  }
-  return lines.join('\n');
-}
-
-/* ----------------------------- Text helpers ----------------------------- */
-
-export const stripInvisibles = (s = '') => s.replace(/[\u00ad\u200b\u200c\u200d\u2060]/g, '');
-
-function monthTokenToEnglish(yyyy, mm) {
-  const y = Number(yyyy);
-  const m = Number(mm);
-  const date = new Date(Date.UTC(y, m - 1, 1));
-  const month = date.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
-  return `${month} ${y}`;
-}
-
-function humanizeDatesInText(out) {
-  if (!out) return out;
-  return out.replace(
-    /\b(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/g,
-    (_m, y, m, d) => `${monthTokenToEnglish(y, m)} ${Number(d)}, ${y}`
-  );
-}
-
-function abbrevNumber(n) {
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return `${(n/1e12).toFixed(2)}T`;
-  if (abs >= 1e9)  return `${(n/1e9).toFixed(2)}B`;
-  if (abs >= 1e6)  return `${(n/1e6).toFixed(2)}M`;
-  return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
-
-function scaleDollars(out = '') {
-  return out.replace(/\$\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\b/g, (_m, whole, dec = '') => {
-    const num = Number((whole || '0').replace(/,/g, '') + (dec || ''));
-    const abbr = abbrevNumber(num);
-    if (/[MBT]$/.test(abbr)) return `$${abbr}`;
-    return `$${num.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
-  });
-}
-
-function tightenNumbers(out) {
-  if (!out) return out;
-  return out.replace(/\s+%/g, '%').replace(/\s+,/g, ',').trim();
-}
-
-function finalizeAnswer(text) {
-  let out = String(text || '');
-  out = humanizeDatesInText(out);
-  out = scaleDollars(out);
-  out = tightenNumbers(out);
-  return out;
-}
-
-/* ------------------------------ PROMPTS ------------------------------ */
-/* These remain exported in case api/query.js (or tests) import them. They
-   compute the schema doc *inside* the function to avoid top-level refs. */
-
-export async function buildPrimaryPrompt(doc = null) {
-  if (!doc) doc = await buildSchemaDoc();
-  return [
-    {
-      role: 'system',
-      content:
-`Produce a SINGLE Postgres query as STRICT JSON {"sql":"..."} using ONLY the whitelisted schema below.
-
-General rules:
-• ONE statement total (SELECT or WITH ... SELECT). No semicolons. CTEs allowed.
-• Use only tables/columns listed below.
-• Always add ORDER BY when returning time series.
-• Return STRICT JSON only.
-
-Whitelisted schema:
-${doc}`
-    }
-  ];
-}
-
-export async function buildRetryPrompt(question, previousSql, errMsg, doc = null) {
-  if (!doc) doc = await buildSchemaDoc();
-  return [
-    {
-      role: 'system',
-      content:
-`Regenerate a SINGLE Postgres query as STRICT JSON {"sql":"..."} that avoids the failing construct.
-Use only the whitelisted schema below.
-
-Whitelisted schema:
-${doc}`
-    },
-    { role: 'user', content: `Original question:\n${question}` },
-    { role: 'assistant', content: `Previous SQL:\n${previousSql}\n\nError:\n${errMsg}` }
-  ];
-}
-
-export async function buildPlannerMessages(question, doc = null) {
-  if (!doc) doc = await buildSchemaDoc();
-  return [
-    {
-      role: 'system',
-      content:
-`You are a query planner for a Postgres warehouse. Output a STRICT JSON plan with ONE SQL.
-Use only the whitelisted schema below.
-
-Whitelisted schema:
-${doc}`
-    },
-    { role: 'user', content: `Question: ${question}\nReturn ONLY the JSON plan as specified.` }
-  ];
-}
-
-/* ------------------------------ LLM calls ------------------------------ */
-
-export async function planQuery(openai, question, doc = null) {
-  if (!doc) doc = await buildSchemaDoc();
-  const resp = await openai.chat.completions.create({
-    model: 'gpt-5',
-    response_format: { type: 'json_object' },
-    messages: await buildPlannerMessages(question, doc),
-  });
-  const text = resp.choices?.[0]?.message?.content || '{}';
-  let plan;
+// Read JSON safely whether req.body exists or not
+async function readJson(req) {
+  if (req.body && typeof req.body === "object") return req.body;
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const raw = Buffer.concat(chunks).toString("utf8") || "{}";
   try {
-    plan = JSON.parse(text);
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) plan = JSON.parse(m[0]);
+    return JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`Invalid JSON body: ${e.message}`);
   }
-  if (!plan?.sql) throw new Error('Planner did not return SQL');
-  return plan;
 }
 
-export async function retryPlan(openai, question, previousSql, errMsg, doc = null) {
-  if (!doc) doc = await buildSchemaDoc();
-  const resp = await openai.chat.completions.create({
-    model: 'gpt-5',
-    response_format: { type: 'json_object' },
-    messages: await buildRetryPrompt(question, previousSql, errMsg, doc),
-  });
-  const text = resp.choices?.[0]?.message?.content || '{}';
-  let plan;
+export default async function handler(req, res) {
   try {
-    plan = JSON.parse(text);
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) plan = JSON.parse(m[0]);
+    if (req.method !== "POST") {
+      res.setHeader("Allow", "POST");
+      return res.status(405).json({ error: "Method Not Allowed" });
+    }
+
+    const { question, minimal = false, presentationHint } = await readJson(req);
+    if (!question) return res.status(400).json({ error: "Missing 'question'" });
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    // 1) Plan SQL
+    let { sql } = await planQuery(openai, question);
+
+    // 2) Execute SQL
+    const pool = new pg.Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    });
+
+    let rows = [];
+    try {
+      const r = await pool.query(sql);
+      rows = r.rows || [];
+    } catch (e) {
+      // 3) Retry once with error-aware planning
+      const retry = await retryPlan(openai, question, sql, String(e));
+      const r2 = await pool.query(retry.sql);
+      sql = retry.sql;
+      rows = r2.rows || [];
+    } finally {
+      await pool.end();
+    }
+
+    // 4) Respond (JSON only)
+    if (minimal) return res.status(200).json({ rows });
+
+    const answer = await generateAnswer(openai, question, rows, presentationHint);
+    return res.status(200).json({ sql, rows, answer });
+  } catch (err) {
+    return res.status(500).json({ error: err?.message || String(err) });
   }
-  if (!plan?.sql) throw new Error('Retry planner did not return SQL');
-  return plan;
-}
-
-/* ------------------------------ Answer stage ------------------------------ */
-
-export async function generateAnswer(openai, question, rows, presentationHint) {
-  if (!rows || rows.length === 0) return 'No rows returned for that query.';
-
-  const style = presentationHint?.style || 'concise';
-  const include = presentationHint?.include_fields || [];
-
-  const sys = [
-    'Write a concise financial/crypto analytics answer using ONLY fields provided.',
-    'Answer in 1–2 sentences. Use only numbers from the rows.',
-    'Format values in the 0–1 range as percentages with 2 decimals.',
-    'Format dates in plain English.',
-    'Prefer natural phrasing.',
-    'No tables.'
-  ];
-  if (style === 'bulleted') sys.push('If helpful, use at most 3 bullets.');
-
-  const resp = await openai.chat.completions.create({
-    model: 'gpt-5',
-    messages: [
-      { role: 'system', content: sys.join(' ') },
-      { role: 'user', content: `Question: ${stripInvisibles(question)}` },
-      {
-        role: 'assistant',
-        content:
-          `Fields to emphasize: ${include.join(', ') || '(none specified)'}\n` +
-          `Rows (JSON): ${JSON.stringify(rows).slice(0, 100000)}`
-      }
-    ]
-  });
-
-  const raw = resp.choices?.[0]?.message?.content || '';
-  return finalizeAnswer(raw);
 }
