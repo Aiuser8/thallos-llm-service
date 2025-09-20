@@ -34,12 +34,10 @@ export default async function handler(req, res) {
     let { sql } = await planQuery(openai, question);
 
     // 2) Execute SQL (with optional statement timeout)
-    const pool = new pg.Pool({
-      connectionString: process.env.DATABASE_URL,
-      // For Supabase on Vercel, keep SSL and relax CA validation to avoid
-      // "self-signed certificate in certificate chain" while still using TLS.
-      ssl: { rejectUnauthorized: false },
-    });
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { require: true, rejectUnauthorized: false }, // <- BOTH flags
+});    
 
     let rows = [];
     let sqlTried = sql;
