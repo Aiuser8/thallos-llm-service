@@ -109,5 +109,20 @@
       "inserted_at": "Timestamp when the row was ingested into the warehouse."
     },
     "primary_key": ["pool_id", "ts"]
+  },
+
+  "clean.token_price_daily_enriched": {
+    "description": "Daily token price feed enriched with token symbols from canon.tokens.",
+    "columns": {
+      "token_id": "Unique identifier for the token (foreign key to canon.tokens).",
+      "symbol": "Token symbol (e.g., USDC, WETH).",
+      "chain": "Blockchain network where the price was observed.",
+      "address": "Contract address of the token on the given chain.",
+      "event_time": "Timestamp when the price was observed (UTC).",
+      "price_usd": "Token price in USD.",
+      "confidence": "Confidence score for the reported price (0–1).",
+      "ingest_time": "Timestamp when the row was ingested into the warehouse."
+    },
+    "primary_key": ["token_id", "chain", "event_time"]
   }
 }
