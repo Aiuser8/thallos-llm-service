@@ -91,13 +91,16 @@ export default async function handler(req, res) {
     // 1) Plan SQL or use specific backtesting queries
     let { sql } = await planQuery(openai, question, null, intent);
     
-    // Override with specific queries for backtesting
+    // Override with optimized queries for backtesting
     if (intent === 'backtest_buy') {
       const assetMatch = question.match(/BTC|ETH|USDC|DAI/i);
       const asset = assetMatch ? assetMatch[0] : 'BTC';
       const yearMatch = question.match(/(\d{4})/);
       const startYear = yearMatch ? yearMatch[1] : '2024';
-      const startDate = `${startYear}-01-01`;
+      // Limit to 2 years max to prevent huge queries
+      const currentYear = new Date().getFullYear();
+      const maxStartYear = Math.max(currentYear - 2, parseInt(startYear));
+      const startDate = `${maxStartYear}-01-01`;
       const endDate = new Date().toISOString().split('T')[0];
       
       const backtestQuery = buildBuyAndHoldQuery(asset, startDate, endDate);
@@ -106,8 +109,11 @@ export default async function handler(req, res) {
       const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
       const asset = assetMatch ? assetMatch[0] : 'ETH';
       const yearMatch = question.match(/(\d{4})/);
-      const startYear = yearMatch ? yearMatch[1] : '2020';
-      const startDate = `${startYear}-01-01`;
+      const startYear = yearMatch ? yearMatch[1] : '2023';
+      // Limit to 2 years max to prevent huge queries
+      const currentYear = new Date().getFullYear();
+      const maxStartYear = Math.max(currentYear - 2, parseInt(startYear));
+      const startDate = `${maxStartYear}-01-01`;
       const endDate = new Date().toISOString().split('T')[0];
       
       const backtestQuery = buildLendingAPYQuery(asset, startDate, endDate);
@@ -127,7 +133,10 @@ export default async function handler(req, res) {
 
     const client = await pool.connect();
     try {
-      const ms = Number(process.env.DB_QUERY_TIMEOUT_MS || 30000); // Reduced from 180000 to 30000 (30 seconds)
+      // Shorter timeout for backtesting to prevent hangs
+      const ms = (intent === 'backtest_buy' || intent === 'backtest_lend' || intent === 'forecast_apy') 
+        ? 15000  // 15 seconds for backtesting
+        : Number(process.env.DB_QUERY_TIMEOUT_MS || 30000);  // 30 seconds for standard queries
       await client.query(`SET statement_timeout TO ${ms}`);
 
       // First attempt
