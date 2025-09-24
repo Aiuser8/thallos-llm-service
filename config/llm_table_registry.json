@@ -1,12 +1,18 @@
 {
   "clean.protocol_chain_tvl_daily": {
-    "description": "Daily total value locked (TVL) by protocol and chain, normalized to USD.",
+    "description": "Daily total value locked (TVL) by protocol and chain, normalized to USD. Each row represents TVL for ONE protocol on ONE chain for ONE day. IMPORTANT: For total TVL across all protocols, filter to the most recent date and sum across protocols/chains. DO NOT sum all rows as this gives cumulative values across time.",
+    "usage_notes": [
+      "For total TVL across all protocols: Use MAX(ts) to get latest date, then SUM(total_liquidity_usd) GROUP BY protocol_id, chain",
+      "For protocol count: Use COUNT(DISTINCT protocol_id) - no date filter needed",
+      "For TVL trends: Always filter by specific date range using WHERE ts BETWEEN dates",
+      "Data freshness: Typically 1-2 days behind current date"
+    ],
     "columns": {
       "protocol_id": "Unique identifier for the protocol.",
       "chain": "Blockchain network where the protocol is deployed.",
       "series_type": "Type of TVL series tracked (e.g., total, staked, borrowed). Note: some protocols use 'main' instead of 'total'.",
-      "ts": "Date of the snapshot (YYYY-MM-DD).",
-      "total_liquidity_usd": "Total value locked in USD across the protocol on the given chain.",
+      "ts": "Date of the snapshot (YYYY-MM-DD). Most recent data is typically 1-2 days old.",
+      "total_liquidity_usd": "Total value locked in USD for this specific protocol on this specific chain for this specific day.",
       "ingest_time": "Timestamp when the row was ingested into the warehouse."
     },
     "primary_key": ["protocol_id", "chain", "series_type", "ts"],
@@ -17,20 +23,20 @@
     }
   },
   "clean.etf_flows_daily": {
-    "description": "Daily net flows of crypto ETFs, showing capital inflows and outflows in USD terms.",
+    "description": "Daily net flows of crypto ETFs, showing capital inflows and outflows in USD terms. Data is typically 1-2 days behind current date.",
     "columns": {
       "gecko_id": "CoinGecko identifier for the asset or ETF.",
-      "day": "Date of the snapshot (YYYY-MM-DD).",
+      "day": "Date of the snapshot (YYYY-MM-DD). Most recent data is typically 1-2 days old.",
       "total_flow_usd": "Net flow value in USD for the ETF (positive for inflows, negative for outflows).",
       "inserted_at": "Timestamp when the row was ingested into the warehouse."
     },
     "primary_key": ["gecko_id", "day"]
   },
   "clean.lending_market_history": {
-    "description": "Historical time-series of lending market activity, including supply, borrow, debt ceiling, and APY metrics for each market.",
+    "description": "Historical time-series of lending market activity, including supply, borrow, debt ceiling, and APY metrics for each market. Data is typically 1-2 days behind current date.",
     "columns": {
       "market_id": "Unique identifier for the lending market.",
-      "ts": "Unix timestamp representing the snapshot time.",
+      "ts": "Unix timestamp representing the snapshot time. Most recent data is typically 1-2 days old.",
       "project": "Name of the protocol or project operating the lending market.",
       "chain": "Blockchain network where the market resides.",
       "symbol": "Token symbol associated with the market (e.g., DAI, USDC).",
