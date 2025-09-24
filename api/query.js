@@ -1,9 +1,32 @@
 // api/query.js — Vercel Node serverless handler (ESM)
 import OpenAI from "openai";
 import pg from "pg";
-import { planQuery, retryPlan, generateAnswer } from "../lib/instructions.js";
+import { planQuery, retryPlan, generateAnswerFromResults } from "../lib/instructions.js";
 
 export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs", regions: ["iad1"] }
+
+// Create and cache the database connection pool
+let dbPool = null;
+
+function getDbPool() {
+  if (!dbPool) {
+    const url = new URL(process.env.DATABASE_URL);
+    dbPool = new pg.Pool({
+      host: url.hostname, // e.g., aws-1-us-east-2.pooler.supabase.com
+      port: Number(url.port || 5432),
+      user: decodeURIComponent(url.username),
+      password: decodeURIComponent(url.password),
+      database: url.pathname.replace(/^\//, ""), // "postgres"
+      // Force TLS but relax CA validation to avoid SELF_SIGNED_CERT_IN_CHAIN in Vercel
+      ssl: { rejectUnauthorized: false },
+      // Connection pool configuration for better performance
+      max: 20, // Maximum number of clients in the pool
+      idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+      connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
+    });
+  }
+  return dbPool;
+}
 
 // Read JSON safely whether req.body exists or not
 async function readJson(req) {
@@ -53,25 +76,13 @@ export default async function handler(req, res) {
     let { sql } = await planQuery(openai, question);
 
     // 2) Execute SQL (with optional statement timeout)
-    // Build the pool from discrete params (avoids URL parsing quirks in some envs)
-    const url = new URL(process.env.DATABASE_URL);
-
-    const pool = new pg.Pool({
-      host: url.hostname, // e.g., aws-1-us-east-2.pooler.supabase.com
-      port: Number(url.port || 5432),
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      database: url.pathname.replace(/^\//, ""), // "postgres"
-      // Force TLS but relax CA validation to avoid SELF_SIGNED_CERT_IN_CHAIN in Vercel
-      ssl: { rejectUnauthorized: false },
-    });
-
+    const pool = getDbPool();
     let rows = [];
     let sqlTried = sql;
 
     const client = await pool.connect();
     try {
-      const ms = Number(process.env.DB_QUERY_TIMEOUT_MS || 180000);
+      const ms = Number(process.env.DB_QUERY_TIMEOUT_MS || 30000); // Reduced from 180000 to 30000 (30 seconds)
       await client.query(`SET statement_timeout TO ${ms}`);
 
       // First attempt
@@ -101,13 +112,14 @@ export default async function handler(req, res) {
       }
     } finally {
       client.release();
-      await pool.end();
+      // Note: We no longer call pool.end() - the pool stays alive for reuse
     }
 
     // 3) Respond (JSON only)
-    if (minimal) return res.status(200).json({ rows });
+    if (minimal) return res.status(200).json({ sql, rows });
 
-    const answer = await generateAnswer(openai, question, rows, presentationHint);
+    // Use optimized answer generation (simplified prompt, faster response)
+    const answer = await generateAnswerFromResults(openai, question, rows, presentationHint);
     return res.status(200).json({ sql, rows, answer });
   } catch (err) {
     // Clear, JSON-only error surface for Vercel & clients

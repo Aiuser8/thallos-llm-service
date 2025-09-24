@@ -13,7 +13,29 @@ const server = http.createServer(async (req, res) => {
     req.on('data', (c) => (raw += c));
     req.on('end', async () => {
       try { req.body = raw ? JSON.parse(raw) : {}; } catch { req.body = {}; }
-      try { await handler(req, res); }
+      
+      // Create Vercel-compatible request/response objects
+      const vercelReq = {
+        ...req,
+        url: req.url,
+        method: req.method,
+        headers: req.headers,
+        body: req.body
+      };
+      
+      const vercelRes = {
+        setHeader: (name, value) => res.setHeader(name, value),
+        status: (code) => { res.statusCode = code; return vercelRes; },
+        json: (data) => {
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify(data));
+        },
+        end: (data) => res.end(data)
+      };
+      
+      try { 
+        await handler(vercelReq, vercelRes); 
+      }
       catch (e) {
         res.statusCode = 500;
         res.setHeader('content-type','application/json');
