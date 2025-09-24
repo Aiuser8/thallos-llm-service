@@ -118,15 +118,21 @@
   },
 
   "clean.token_price_daily_enriched": {
-    "description": "Daily token price feed enriched with token symbols from canon.tokens.",
+    "description": "Daily token price feed enriched with token symbols from canon.tokens. Essential for backtesting buy-and-hold scenarios. Data is typically 1-2 days behind current date.",
+    "usage_notes": [
+      "For backtesting: Get price on start_date and end_date for same symbol/chain",
+      "For price history: Filter by symbol and date range using event_time",
+      "Use confidence > 0.8 for reliable price data",
+      "Data freshness: Typically 1-2 days behind current date"
+    ],
     "columns": {
       "token_id": "Unique identifier for the token (foreign key to canon.tokens).",
-      "symbol": "Token symbol (e.g., USDC, WETH).",
+      "symbol": "Token symbol (e.g., BTC, ETH, USDC, WETH).",
       "chain": "Blockchain network where the price was observed.",
       "address": "Contract address of the token on the given chain.",
-      "event_time": "Timestamp when the price was observed (UTC).",
-      "price_usd": "Token price in USD.",
-      "confidence": "Confidence score for the reported price (0–1).",
+      "event_time": "Timestamp when the price was observed (UTC). Most recent data is typically 1-2 days old.",
+      "price_usd": "Token price in USD at the time of observation.",
+      "confidence": "Confidence score for the reported price (0–1). Use > 0.8 for reliable data.",
       "ingest_time": "Timestamp when the row was ingested into the warehouse."
     },
     "primary_key": ["token_id", "chain", "event_time"]

@@ -1,7 +1,7 @@
 // api/query.js — Vercel Node serverless handler (ESM)
 import OpenAI from "openai";
 import pg from "pg";
-import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion } from "../lib/instructions.js";
+import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion, detectQueryIntent, calculateBuyAndHoldBacktest, calculateLendingBacktest, calculateAPYForecast, buildBuyAndHoldQuery, buildLendingAPYQuery, buildAPYForecastQuery } from "../lib/instructions.js";
 
 export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs", regions: ["iad1"] }
 
@@ -85,8 +85,40 @@ export default async function handler(req, res) {
       });
     }
 
-    // 1) Plan SQL
-    let { sql } = await planQuery(openai, question);
+    // Detect query intent for backtesting/forecasting
+    const intent = detectQueryIntent(question);
+
+    // 1) Plan SQL or use specific backtesting queries
+    let { sql } = await planQuery(openai, question, null, intent);
+    
+    // Override with specific queries for backtesting
+    if (intent === 'backtest_buy') {
+      const assetMatch = question.match(/BTC|ETH|USDC|DAI/i);
+      const asset = assetMatch ? assetMatch[0] : 'BTC';
+      const yearMatch = question.match(/(\d{4})/);
+      const startYear = yearMatch ? yearMatch[1] : '2024';
+      const startDate = `${startYear}-01-01`;
+      const endDate = new Date().toISOString().split('T')[0];
+      
+      const backtestQuery = buildBuyAndHoldQuery(asset, startDate, endDate);
+      sql = backtestQuery.sql;
+    } else if (intent === 'backtest_lend') {
+      const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
+      const asset = assetMatch ? assetMatch[0] : 'ETH';
+      const yearMatch = question.match(/(\d{4})/);
+      const startYear = yearMatch ? yearMatch[1] : '2020';
+      const startDate = `${startYear}-01-01`;
+      const endDate = new Date().toISOString().split('T')[0];
+      
+      const backtestQuery = buildLendingAPYQuery(asset, startDate, endDate);
+      sql = backtestQuery.sql;
+    } else if (intent === 'forecast_apy') {
+      const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
+      const asset = assetMatch ? assetMatch[0] : 'ETH';
+      
+      const forecastQuery = buildAPYForecastQuery(asset, 60);
+      sql = forecastQuery.sql;
+    }
 
     // 2) Execute SQL (with optional statement timeout)
     const pool = getDbPool();
@@ -104,7 +136,7 @@ export default async function handler(req, res) {
         rows = r.rows || [];
       } catch (e1) {
         // Retry with error-aware planning
-        const retry = await retryPlan(openai, question, sql, String(e1));
+        const retry = await retryPlan(openai, question, sql, String(e1), null, intent);
         sql = retry.sql;
         sqlTried = sql;
 
@@ -128,12 +160,77 @@ export default async function handler(req, res) {
       // Note: We no longer call pool.end() - the pool stays alive for reuse
     }
 
-    // 3) Respond (JSON only)
-    if (minimal) return res.status(200).json({ sql, rows, source: "database_query" });
+    // 3) Handle backtesting/forecasting calculations
+    let backtestResult = null;
+    let answer = null;
+    
+    if (intent === 'backtest_buy' && rows && rows.length > 0) {
+      // Extract amount from question or use default
+      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+      const amountUsd = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 1000;
+      
+      backtestResult = calculateBuyAndHoldBacktest(rows, amountUsd);
+      
+      if (!backtestResult.error) {
+        answer = `If you had invested $${backtestResult.amount_usd.toLocaleString()} on ${backtestResult.start_date}, you would have bought ${backtestResult.units_bought.toFixed(6)} units at $${backtestResult.start_price.toFixed(2)}. Today, your investment would be worth $${backtestResult.current_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return). (Data as of ${backtestResult.end_date})`;
+      }
+    } else if (intent === 'backtest_lend' && rows && rows.length > 0) {
+      // Extract amount and dates from question
+      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+      const amountUsd = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 1000;
+      
+      // Extract dates from question or use defaults
+      const yearMatch = question.match(/(\d{4})/);
+      const startYear = yearMatch ? yearMatch[1] : '2020';
+      const startDate = `${startYear}-01-01`;
+      const endDate = new Date().toISOString().split('T')[0];
+      
+      // Extract asset from question
+      const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
+      const asset = assetMatch ? assetMatch[0] : 'ETH';
+      
+      // Get price data for the same asset and date range
+      let priceData = null;
+      try {
+        const priceQuery = buildBuyAndHoldQuery(asset, startDate, endDate);
+        const priceResult = await pool.query(priceQuery.sql);
+        priceData = priceResult.rows;
+      } catch (err) {
+        console.log("Could not fetch price data:", err.message);
+      }
+      
+      backtestResult = calculateLendingBacktest(rows, amountUsd, startDate, endDate, priceData);
+      
+      if (!backtestResult.error) {
+        if (backtestResult.price_adjusted_scenario) {
+          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} of ${asset} starting ${backtestResult.start_date}, here are two scenarios:
 
-    // Use optimized answer generation (simplified prompt, faster response)
-    const answer = await generateAnswerFromResults(openai, question, rows, presentationHint);
-    return res.status(200).json({ sql, rows, answer, source: "database_query" });
+1. **Flat Price Scenario**: Your investment would be worth $${backtestResult.final_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return, ${backtestResult.annualized_return.toFixed(1)}% annualized)
+
+2. **Price-Adjusted Scenario**: Your investment would be worth $${backtestResult.price_adjusted_scenario.final_value.toLocaleString()} (${backtestResult.price_adjusted_scenario.percent_return > 0 ? '+' : ''}${backtestResult.price_adjusted_scenario.percent_return.toFixed(1)}% return) - this includes the ${asset} price change from $${backtestResult.price_adjusted_scenario.start_price.toFixed(2)} to $${backtestResult.price_adjusted_scenario.end_price.toFixed(2)}.
+
+(Data as of ${backtestResult.end_date})`;
+        } else {
+          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} starting ${backtestResult.start_date}, your investment would be worth $${backtestResult.final_value.toLocaleString()} today (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return, ${backtestResult.annualized_return.toFixed(1)}% annualized). Note: Price data not available for full analysis. (Data as of ${backtestResult.end_date})`;
+        }
+      }
+    } else if (intent === 'forecast_apy' && rows && rows.length > 0) {
+      backtestResult = calculateAPYForecast(rows);
+      
+      if (!backtestResult.error) {
+        answer = `Based on the last ${backtestResult.forecast_period} of data, the expected APY is ${backtestResult.forecast_apy.toFixed(2)}% (range: ${backtestResult.min_apy.toFixed(2)}% - ${backtestResult.max_apy.toFixed(2)}%, confidence: ${backtestResult.confidence}). ${backtestResult.note}`;
+      }
+    }
+
+    // 4) Respond (JSON only)
+    if (minimal) return res.status(200).json({ sql, rows, source: "database_query", intent, backtestResult });
+
+    // Generate standard answer if no backtesting was performed
+    if (!answer) {
+      answer = await generateAnswerFromResults(openai, question, rows, presentationHint, intent);
+    }
+    
+    return res.status(200).json({ sql, rows, answer, source: "database_query", intent, backtestResult });
   } catch (err) {
     // Clear, JSON-only error surface for Vercel & clients
     const message = err?.message || String(err);
