@@ -1,7 +1,7 @@
 // api/query.js — Vercel Node serverless handler (ESM)
 import OpenAI from "openai";
 import pg from "pg";
-import { planQuery, retryPlan, generateAnswerFromResults } from "../lib/instructions.js";
+import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion } from "../lib/instructions.js";
 
 export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs", regions: ["iad1"] }
 
@@ -72,6 +72,19 @@ export default async function handler(req, res) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+    // Check if question is within data scope or needs general knowledge handling
+    const inDataScope = await isQuestionInDataScope(question);
+    
+    if (!inDataScope) {
+      // Handle as general knowledge question
+      const answer = await handleGeneralKnowledgeQuestion(openai, question);
+      return res.status(200).json({ 
+        answer, 
+        source: "general_knowledge",
+        note: "This question was answered using general knowledge rather than database queries."
+      });
+    }
+
     // 1) Plan SQL
     let { sql } = await planQuery(openai, question);
 
@@ -116,11 +129,11 @@ export default async function handler(req, res) {
     }
 
     // 3) Respond (JSON only)
-    if (minimal) return res.status(200).json({ sql, rows });
+    if (minimal) return res.status(200).json({ sql, rows, source: "database_query" });
 
     // Use optimized answer generation (simplified prompt, faster response)
     const answer = await generateAnswerFromResults(openai, question, rows, presentationHint);
-    return res.status(200).json({ sql, rows, answer });
+    return res.status(200).json({ sql, rows, answer, source: "database_query" });
   } catch (err) {
     // Clear, JSON-only error surface for Vercel & clients
     const message = err?.message || String(err);
