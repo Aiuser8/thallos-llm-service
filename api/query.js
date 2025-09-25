@@ -174,9 +174,20 @@ export default async function handler(req, res) {
     let answer = null;
     
     if (intent === 'backtest_buy' && rows && rows.length > 0) {
-      // Extract amount from question or use default
-      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-      const amountUsd = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 1000;
+      // Extract amount from question or use default (handle k/m suffixes)
+      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([km]?)/i);
+      let amountUsd = 1000; // default
+      if (amountMatch) {
+        const baseAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+        const suffix = amountMatch[2]?.toLowerCase() || '';
+        if (suffix === 'k') {
+          amountUsd = baseAmount * 1000;
+        } else if (suffix === 'm') {
+          amountUsd = baseAmount * 1000000;
+        } else {
+          amountUsd = baseAmount;
+        }
+      }
       
       backtestResult = calculateBuyAndHoldBacktest(rows, amountUsd);
       
@@ -184,9 +195,20 @@ export default async function handler(req, res) {
         answer = `If you had invested $${backtestResult.amount_usd.toLocaleString()} on ${backtestResult.start_date}, you would have bought ${backtestResult.units_bought.toFixed(6)} units at $${backtestResult.start_price.toFixed(2)}. Today, your investment would be worth $${backtestResult.current_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return). (Data as of ${backtestResult.end_date})`;
       }
     } else if (intent === 'backtest_lend' && rows && rows.length > 0) {
-      // Extract amount and dates from question
-      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-      const amountUsd = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, '')) : 1000;
+      // Extract amount and dates from question (handle k/m suffixes)
+      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([km]?)/i);
+      let amountUsd = 1000; // default
+      if (amountMatch) {
+        const baseAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+        const suffix = amountMatch[2]?.toLowerCase() || '';
+        if (suffix === 'k') {
+          amountUsd = baseAmount * 1000;
+        } else if (suffix === 'm') {
+          amountUsd = baseAmount * 1000000;
+        } else {
+          amountUsd = baseAmount;
+        }
+      }
       
       // Extract dates from question or use defaults
       const yearMatch = question.match(/(\d{4})/);
