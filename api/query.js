@@ -19,10 +19,14 @@ function getDbPool() {
       database: url.pathname.replace(/^\//, ""), // "postgres"
       // Force TLS but relax CA validation to avoid SELF_SIGNED_CERT_IN_CHAIN in Vercel
       ssl: { rejectUnauthorized: false },
-      // Connection pool configuration for better performance
-      max: 20, // Maximum number of clients in the pool
-      idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
-      connectionTimeoutMillis: 2000, // Return an error after 2 seconds if connection could not be established
+      // Improved connection pool configuration for high-volume usage and stability
+      max: 10, // Reduced from 20 to avoid Supabase connection limits
+      min: 2, // Keep minimum connections open for faster responses
+      idleTimeoutMillis: 20000, // Reduce idle timeout to 20 seconds
+      connectionTimeoutMillis: 5000, // Increase connection timeout to 5 seconds
+      query_timeout: 30000, // 30 second query timeout
+      keepAlive: true, // Keep connections alive to prevent EADDRNOTAVAIL errors
+      application_name: 'thallos-llm-service' // Help identify connections in Supabase logs
     });
   }
   return dbPool;
@@ -89,9 +93,9 @@ export default async function handler(req, res) {
     const intent = detectQueryIntent(question);
 
     // 1) Plan SQL or use specific backtesting queries
-    let { sql } = await planQuery(openai, question, null, intent);
+    let sql;
     
-    // Override with optimized queries for backtesting
+    // Use specific backtesting queries (skip LLM planning for these)
     if (intent === 'backtest_buy') {
       const assetMatch = question.match(/BTC|ETH|USDC|DAI/i);
       const asset = assetMatch ? assetMatch[0] : 'BTC';
@@ -116,14 +120,18 @@ export default async function handler(req, res) {
       const startDate = `${maxStartYear}-01-01`;
       const endDate = new Date().toISOString().split('T')[0];
       
-      const backtestQuery = buildLendingAPYQuery(asset, startDate, endDate);
-      sql = backtestQuery.sql;
+        const backtestQuery = buildLendingAPYQuery(asset, startDate, endDate, question);
+        sql = backtestQuery.sql;
     } else if (intent === 'forecast_apy') {
       const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
       const asset = assetMatch ? assetMatch[0] : 'ETH';
       
-      const forecastQuery = buildAPYForecastQuery(asset, 60);
+      const forecastQuery = buildAPYForecastQuery(asset, 60, question);
       sql = forecastQuery.sql;
+    } else {
+      // Standard queries: use LLM planning
+      const result = await planQuery(openai, question, null, intent);
+      sql = result.sql;
     }
 
     // 2) Execute SQL (with optional statement timeout)
@@ -131,7 +139,17 @@ export default async function handler(req, res) {
     let rows = [];
     let sqlTried = sql;
 
-    const client = await pool.connect();
+    let client;
+    try {
+      client = await pool.connect();
+    } catch (connectionError) {
+      console.error('Database connection failed:', connectionError.message);
+      return res.status(503).json({ 
+        error: "Database temporarily unavailable. Please try again.", 
+        details: connectionError.message 
+      });
+    }
+    
     try {
       // Shorter timeout for backtesting to prevent hangs
       const ms = (intent === 'backtest_buy' || intent === 'backtest_lend' || intent === 'forecast_apy') 
@@ -233,23 +251,31 @@ export default async function handler(req, res) {
       backtestResult = calculateLendingBacktest(rows, amountUsd, startDate, endDate, priceData);
       
       if (!backtestResult.error) {
+        // Extract protocol info from the data
+        const protocols = [...new Set(rows.map(r => r.project).filter(p => p))];
+        const protocolInfo = protocols.length > 0 ? ` using ${protocols.join(', ')}` : '';
+        
         if (backtestResult.price_adjusted_scenario) {
-          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} of ${asset} starting ${backtestResult.start_date}, here are two scenarios:
+          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} of ${asset} starting ${backtestResult.start_date}${protocolInfo} (average ${backtestResult.average_apy.toFixed(2)}% APY), here are two scenarios:
 
-1. **Flat Price Scenario**: Your investment would be worth $${backtestResult.final_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return, ${backtestResult.annualized_return.toFixed(1)}% annualized)
+1. **Flat Price Scenario**: Your investment would be worth $${backtestResult.final_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return)
 
 2. **Price-Adjusted Scenario**: Your investment would be worth $${backtestResult.price_adjusted_scenario.final_value.toLocaleString()} (${backtestResult.price_adjusted_scenario.percent_return > 0 ? '+' : ''}${backtestResult.price_adjusted_scenario.percent_return.toFixed(1)}% return) - this includes the ${asset} price change from $${backtestResult.price_adjusted_scenario.start_price.toFixed(2)} to $${backtestResult.price_adjusted_scenario.end_price.toFixed(2)}.
 
 (Data as of ${backtestResult.end_date})`;
         } else {
-          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} starting ${backtestResult.start_date}, your investment would be worth $${backtestResult.final_value.toLocaleString()} today (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return, ${backtestResult.annualized_return.toFixed(1)}% annualized). Note: Price data not available for full analysis. (Data as of ${backtestResult.end_date})`;
+          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} starting ${backtestResult.start_date}${protocolInfo} at an average ${backtestResult.average_apy.toFixed(2)}% APY, your investment would be worth $${backtestResult.final_value.toLocaleString()} today (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return). Note: Price data not available for full analysis. (Data as of ${backtestResult.end_date})`;
         }
       }
     } else if (intent === 'forecast_apy' && rows && rows.length > 0) {
       backtestResult = calculateAPYForecast(rows);
       
       if (!backtestResult.error) {
-        answer = `Based on the last ${backtestResult.forecast_period} of data, the expected APY is ${backtestResult.forecast_apy.toFixed(2)}% (range: ${backtestResult.min_apy.toFixed(2)}% - ${backtestResult.max_apy.toFixed(2)}%, confidence: ${backtestResult.confidence}). ${backtestResult.note}`;
+        // Extract protocol info from the data
+        const protocols = [...new Set(rows.map(r => r.project).filter(p => p))];
+        const protocolInfo = protocols.length > 0 ? ` (based on ${protocols.join(', ')} data)` : '';
+        
+        answer = `Based on the last ${backtestResult.forecast_period} of data, the expected APY is ${backtestResult.forecast_apy.toFixed(2)}% (range: ${backtestResult.min_apy.toFixed(2)}% - ${backtestResult.max_apy.toFixed(2)}%, confidence: ${backtestResult.confidence})${protocolInfo}. ${backtestResult.note}`;
       }
     }
 
@@ -261,7 +287,22 @@ export default async function handler(req, res) {
       answer = await generateAnswerFromResults(openai, question, rows, presentationHint, intent);
     }
     
-    return res.status(200).json({ sql, rows, answer, source: "database_query", intent, backtestResult });
+    // Always include debug info for troubleshooting
+    const debugInfo = {
+      sql: sql,
+      raw_data_sample: rows.slice(0, 5), // First 5 rows
+      total_rows: rows.length
+    };
+    
+    return res.status(200).json({ 
+      sql, 
+      rows, 
+      answer, 
+      source: "database_query", 
+      intent, 
+      backtestResult,
+      debug: debugInfo 
+    });
   } catch (err) {
     // Clear, JSON-only error surface for Vercel & clients
     const message = err?.message || String(err);

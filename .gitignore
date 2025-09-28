@@ -58,3 +58,4 @@ tmp/
 
 # Repo-specific
 .git-redactions.txt
+.vercel
