@@ -1,9 +1,63 @@
 // api/query.js — Vercel Node serverless handler (ESM)
 import OpenAI from "openai";
 import pg from "pg";
-import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion, detectQueryIntent, calculateBuyAndHoldBacktest, calculateLendingBacktest, calculateAPYForecast, calculateRotationStrategy, buildBuyAndHoldQuery, buildLendingAPYQuery, buildAPYForecastQuery, buildRotationStrategyQuery } from "../lib/instructions.js";
+import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion, detectQueryIntent, calculateBuyAndHoldBacktest, calculateLendingBacktest, calculateAPYForecast, calculateRotationStrategy, buildBuyAndHoldQuery, buildLendingAPYQuery, buildAPYForecastQuery, buildRotationStrategyQuery, extractWalletAddress, analyzeWalletWithAlchemy } from "../lib/instructions.js";
 
 export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs", regions: ["iad1"] }
+
+// Helper function to generate wallet summary
+function generateWalletSummary(walletAnalysis) {
+  const { 
+    wallet_address, 
+    total_transactions, 
+    tokens, 
+    transaction_breakdown, 
+    most_active_token,
+    recent_activity,
+    total_value_usd 
+  } = walletAnalysis;
+
+  let summary = `**Wallet Analysis for ${wallet_address.slice(0, 6)}...${wallet_address.slice(-4)}**\n\n`;
+  
+  summary += `📊 **Transaction Overview:**\n`;
+  summary += `• Total transactions: ${total_transactions}\n`;
+  summary += `• Incoming: ${transaction_breakdown.incoming}\n`;
+  summary += `• Outgoing: ${transaction_breakdown.outgoing}\n`;
+  
+  if (total_value_usd > 0) {
+    summary += `• Total value: $${total_value_usd.toLocaleString()}\n`;
+  }
+  
+  summary += `\n💰 **Token Activity:**\n`;
+  if (tokens && tokens.length > 0) {
+    const topTokens = tokens.slice(0, 5);
+    for (const token of topTokens) {
+      const netAmount = token.net_amount;
+      const direction = netAmount > 0 ? '+' : netAmount < 0 ? '-' : '±';
+      summary += `• ${token.symbol}: ${direction}${Math.abs(netAmount).toFixed(4)}\n`;
+    }
+  } else {
+    summary += `• No token transfers found\n`;
+  }
+  
+  if (most_active_token) {
+    summary += `\n🔥 **Most Active Token:** ${most_active_token.symbol}\n`;
+  }
+  
+  summary += `\n📈 **Recent Activity:**\n`;
+  if (recent_activity && recent_activity.length > 0) {
+    for (const activity of recent_activity.slice(0, 3)) {
+      const direction = activity.to?.toLowerCase() === wallet_address.toLowerCase() ? '⬇️ Received' : '⬆️ Sent';
+      summary += `• ${direction} ${activity.value || '?'} ${activity.asset || 'ETH'}\n`;
+    }
+  } else {
+    summary += `• No recent activity found\n`;
+  }
+  
+  summary += `\n*Analysis based on recent transaction history via Alchemy API*`;
+  
+  return summary;
+}
 
 // Create and cache the database connection pool
 let dbPool = null;
@@ -104,7 +158,56 @@ export default async function handler(req, res) {
       });
     }
     
-    // Let all intents attempt to generate SQL first - only block if they actually fail
+    // Handle wallet analysis separately (doesn't use SQL)
+    if (intent === 'wallet_analysis') {
+      const walletAddress = extractWalletAddress(question);
+      
+      if (!walletAddress) {
+        return res.status(400).json({
+          error: "Please provide a valid Ethereum wallet address (0x...)",
+          intent: intent
+        });
+      }
+      
+      const alchemyApiKey = process.env.ALCHEMY_API_KEY;
+      if (!alchemyApiKey) {
+        return res.status(500).json({
+          error: "Wallet analysis is not configured. Missing Alchemy API key.",
+          intent: intent
+        });
+      }
+      
+      try {
+        const walletAnalysis = await analyzeWalletWithAlchemy(walletAddress, alchemyApiKey);
+        
+        if (walletAnalysis.error) {
+          return res.status(500).json({
+            error: walletAnalysis.error,
+            wallet_address: walletAddress,
+            intent: intent
+          });
+        }
+        
+        // Generate a natural language summary of the wallet
+        const answer = generateWalletSummary(walletAnalysis);
+        
+        return res.status(200).json({
+          answer: answer,
+          wallet_analysis: walletAnalysis,
+          source: "alchemy_api",
+          intent: intent
+        });
+        
+      } catch (error) {
+        return res.status(500).json({
+          error: `Wallet analysis failed: ${error.message}`,
+          wallet_address: walletAddress,
+          intent: intent
+        });
+      }
+    }
+
+    // Let all other intents attempt to generate SQL first - only block if they actually fail
 
     // 1) Plan SQL or use specific backtesting queries
     let sql;
