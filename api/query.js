@@ -47,6 +47,8 @@ async function readJson(req) {
 }
 
 export default async function handler(req, res) {
+  let intent = 'standard_query'; // Initialize early to prevent undefined errors in catch block
+  
   try {
     // Accept POST (JSON body) and GET (?q=...) to support webhooks/cron
     if (req.method !== "POST" && req.method !== "GET") {
@@ -90,7 +92,7 @@ export default async function handler(req, res) {
     }
 
     // Detect query intent for backtesting/forecasting
-    let intent = detectQueryIntent(question);
+    intent = detectQueryIntent(question);
     
     // Handle special intents that need general knowledge responses
     if (intent === 'portfolio_optimization') {
