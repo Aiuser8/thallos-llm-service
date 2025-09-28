@@ -1,7 +1,7 @@
 // api/query.js — Vercel Node serverless handler (ESM)
 import OpenAI from "openai";
 import pg from "pg";
-import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion, detectQueryIntent, calculateBuyAndHoldBacktest, calculateLendingBacktest, calculateAPYForecast, buildBuyAndHoldQuery, buildLendingAPYQuery, buildAPYForecastQuery } from "../lib/instructions.js";
+import { planQuery, retryPlan, generateAnswerFromResults, isQuestionInDataScope, handleGeneralKnowledgeQuestion, detectQueryIntent, calculateBuyAndHoldBacktest, calculateLendingBacktest, calculateAPYForecast, calculateRotationStrategy, buildBuyAndHoldQuery, buildLendingAPYQuery, buildAPYForecastQuery, buildRotationStrategyQuery } from "../lib/instructions.js";
 
 export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs", regions: ["iad1"] }
 
@@ -90,7 +90,19 @@ export default async function handler(req, res) {
     }
 
     // Detect query intent for backtesting/forecasting
-    const intent = detectQueryIntent(question);
+    let intent = detectQueryIntent(question);
+    
+    // Handle special intents that need general knowledge responses
+    if (intent === 'portfolio_optimization') {
+      const answer = await handleGeneralKnowledgeQuestion(openai, question);
+      return res.status(200).json({ 
+        answer, 
+        source: "general_knowledge",
+        intent: intent
+      });
+    }
+    
+    // Let all intents attempt to generate SQL first - only block if they actually fail
 
     // 1) Plan SQL or use specific backtesting queries
     let sql;
@@ -128,6 +140,12 @@ export default async function handler(req, res) {
       
       const forecastQuery = buildAPYForecastQuery(asset, 60, question);
       sql = forecastQuery.sql;
+    } else if (intent === 'rotation_strategy') {
+      const yearMatch = question.match(/since\s+(\d{4})/);
+      const startYear = yearMatch ? yearMatch[1] : '2020';
+      
+      const rotationQuery = buildRotationStrategyQuery(question, startYear);
+      sql = rotationQuery.sql;
     } else {
       // Standard queries: use LLM planning
       const result = await planQuery(openai, question, null, intent);
@@ -277,6 +295,26 @@ export default async function handler(req, res) {
         
         answer = `Based on the last ${backtestResult.forecast_period} of data, the expected APY is ${backtestResult.forecast_apy.toFixed(2)}% (range: ${backtestResult.min_apy.toFixed(2)}% - ${backtestResult.max_apy.toFixed(2)}%, confidence: ${backtestResult.confidence})${protocolInfo}. ${backtestResult.note}`;
       }
+    } else if (intent === 'rotation_strategy' && rows && rows.length > 0) {
+      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([km]?)/i);
+      let initialAmount = 10000; // default
+      if (amountMatch) {
+        const baseAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
+        const suffix = amountMatch[2]?.toLowerCase() || '';
+        if (suffix === 'k') {
+          initialAmount = baseAmount * 1000;
+        } else if (suffix === 'm') {
+          initialAmount = baseAmount * 1000000;
+        } else {
+          initialAmount = baseAmount;
+        }
+      }
+      
+      backtestResult = calculateRotationStrategy(rows, initialAmount);
+      
+      if (!backtestResult.error) {
+        answer = `If you had rotated quarterly into the top decile of stablecoin pools since ${backtestResult.start_date?.split('T')[0]}, your CAGR would be ${backtestResult.cagr.toFixed(2)}%. Starting with $${backtestResult.initial_amount.toLocaleString()}, you would have $${backtestResult.final_value.toLocaleString()} today (${backtestResult.total_return_percent.toFixed(1)}% total return over ${backtestResult.years.toFixed(1)} years). Average quarterly APY was ${backtestResult.avg_quarterly_apy.toFixed(2)}% across ${backtestResult.avg_pool_count.toFixed(0)} pools per quarter. (Data as of ${backtestResult.end_date?.split('T')[0]})`;
+      }
     }
 
     // 4) Respond (JSON only)
@@ -304,10 +342,30 @@ export default async function handler(req, res) {
       debug: debugInfo 
     });
   } catch (err) {
-    // Clear, JSON-only error surface for Vercel & clients
+    // Provide context-aware error messages based on intent and error type
     const message = err?.message || String(err);
+    let contextualMessage = message;
+    
+    if (intent === 'complex_backtest') {
+      contextualMessage = "This complex backtesting strategy (involving leverage, looping, or multi-protocol interactions) couldn't be processed with our current data. Try simpler backtests with single protocols and basic buy-and-hold or lending strategies.";
+    } else if (intent === 'liquidity_pool_analysis') {
+      contextualMessage = "This liquidity pool comparison couldn't be completed. Try asking about specific metrics like 'What's the current APY for ETH/USDC pools on Aerodrome?' or 'Compare current yields on Uniswap vs Curve.'";
+    } else if (intent === 'rotation_strategy') {
+      contextualMessage = "This rotation strategy analysis couldn't be completed with the available data. The query might be too complex or require data we don't have sufficient coverage for.";
+    } else if (message.includes('timestamp') || message.includes('bigint') || message.includes('UNION')) {
+      contextualMessage = "There was a data compatibility issue with this query. Try asking about a single protocol or shorter time period.";
+    } else if (message.includes('does not exist') || message.includes('column')) {
+      contextualMessage = "This query requires data fields that aren't available. Try a simpler version of your question.";
+    } else if (message.includes('timeout') || message.includes('statement_timeout')) {
+      contextualMessage = "This query is too complex and timed out. Try asking about a shorter time period or specific protocols.";
+    } else if (message.includes('Planner did not return SQL')) {
+      contextualMessage = "This query is too complex for our current capabilities. Try breaking it down into simpler questions or asking about specific protocols and metrics.";
+    }
+    
     const payload = {
-      error: message,
+      error: contextualMessage,
+      intent: intent,
+      technical_details: message,
       db: {
         code: err?.code,
         detail: err?.detail,
@@ -315,8 +373,6 @@ export default async function handler(req, res) {
         position: err?.position,
       },
       sql: err?.sql, // which SQL failed (if any)
-      hint:
-        "Check DATABASE_URL (host/db/role), ?sslmode=require (optional), schema/table privileges, and request method/body.",
     };
     res.setHeader("content-type", "application/json");
     return res.status(500).end(JSON.stringify(payload));
