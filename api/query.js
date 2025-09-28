@@ -9,39 +9,70 @@ export const config = { runtime: "nodejs" }; // optionally: { runtime: "nodejs",
 function generateWalletSummary(walletAnalysis) {
   const { 
     wallet_address, 
-    total_transactions, 
-    tokens, 
-    transaction_breakdown, 
+    current_holdings,
+    total_portfolio_value_usd,
+    holdings_count,
+    largest_holding,
+    tokens, // For transaction-based analysis
     most_active_token,
+    transaction_breakdown, 
     recent_activity,
-    total_value_usd 
+    positions_available
   } = walletAnalysis;
 
   let summary = `**Wallet Analysis for ${wallet_address.slice(0, 6)}...${wallet_address.slice(-4)}**\n\n`;
   
-  summary += `📊 **Transaction Overview:**\n`;
-  summary += `• Total transactions: ${total_transactions}\n`;
-  summary += `• Incoming: ${transaction_breakdown.incoming}\n`;
-  summary += `• Outgoing: ${transaction_breakdown.outgoing}\n`;
-  
-  if (total_value_usd > 0) {
-    summary += `• Total value: $${total_value_usd.toLocaleString()}\n`;
-  }
-  
-  summary += `\n💰 **Token Activity:**\n`;
-  if (tokens && tokens.length > 0) {
-    const topTokens = tokens.slice(0, 5);
-    for (const token of topTokens) {
-      const netAmount = token.net_amount;
-      const direction = netAmount > 0 ? '+' : netAmount < 0 ? '-' : '±';
-      summary += `• ${token.symbol}: ${direction}${Math.abs(netAmount).toFixed(4)}\n`;
+  // Show different content based on available data
+  if (positions_available && current_holdings) {
+    // Current positions available
+    summary += `💼 **Portfolio Overview:**\n`;
+    summary += `• Total Portfolio Value: $${total_portfolio_value_usd.toLocaleString()}\n`;
+    summary += `• Number of Holdings: ${holdings_count}\n`;
+    summary += `• Recent Transactions: ${transaction_breakdown.total} (${transaction_breakdown.incoming} in, ${transaction_breakdown.outgoing} out)\n`;
+    
+    summary += `\n💰 **Current Holdings:**\n`;
+    if (current_holdings.length > 0) {
+      const topHoldings = current_holdings.slice(0, 8);
+      for (const holding of topHoldings) {
+        const percentage = total_portfolio_value_usd > 0 ? 
+          ((holding.balance_usd / total_portfolio_value_usd) * 100).toFixed(1) : 0;
+        summary += `• ${holding.symbol}: ${holding.balance.toFixed(4)} ($${holding.balance_usd.toLocaleString()}) - ${percentage}%\n`;
+      }
+      
+      if (current_holdings.length > 8) {
+        summary += `• ... and ${current_holdings.length - 8} more tokens\n`;
+      }
+    } else {
+      summary += `• No current holdings found\n`;
+    }
+    
+    if (largest_holding) {
+      const percentage = total_portfolio_value_usd > 0 ? 
+        ((largest_holding.balance_usd / total_portfolio_value_usd) * 100).toFixed(1) : 0;
+      summary += `\n🔥 **Largest Position:** ${largest_holding.symbol} (${percentage}% of portfolio)\n`;
     }
   } else {
-    summary += `• No token transfers found\n`;
-  }
-  
-  if (most_active_token) {
-    summary += `\n🔥 **Most Active Token:** ${most_active_token.symbol}\n`;
+    // Transaction-based analysis fallback
+    summary += `📊 **Transaction Overview:**\n`;
+    summary += `• Total transactions: ${transaction_breakdown.total}\n`;
+    summary += `• Incoming: ${transaction_breakdown.incoming}\n`;
+    summary += `• Outgoing: ${transaction_breakdown.outgoing}\n`;
+    
+    summary += `\n💰 **Token Activity (from transactions):**\n`;
+    if (tokens && tokens.length > 0) {
+      const topTokens = tokens.slice(0, 5);
+      for (const token of topTokens) {
+        const netAmount = token.net_amount;
+        const direction = netAmount > 0 ? '+' : netAmount < 0 ? '-' : '±';
+        summary += `• ${token.symbol}: ${direction}${Math.abs(netAmount).toFixed(4)}\n`;
+      }
+    } else {
+      summary += `• No token transfers found\n`;
+    }
+    
+    if (most_active_token) {
+      summary += `\n🔥 **Most Active Token:** ${most_active_token.symbol}\n`;
+    }
   }
   
   summary += `\n📈 **Recent Activity:**\n`;
@@ -54,7 +85,8 @@ function generateWalletSummary(walletAnalysis) {
     summary += `• No recent activity found\n`;
   }
   
-  summary += `\n*Analysis based on recent transaction history via Alchemy API*`;
+  const dataSource = positions_available ? 'current positions and transaction history' : 'transaction history';
+  summary += `\n*Analysis based on ${dataSource} via Alchemy API*`;
   
   return summary;
 }
