@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     intent = detectQueryIntent(question);
     
     // Handle special intents that need general knowledge responses
-    if (intent === 'portfolio_optimization') {
+    if (intent === 'portfolio_optimization' || intent === 'general_prediction') {
       const answer = await handleGeneralKnowledgeQuestion(openai, question);
       return res.status(200).json({ 
         answer, 
@@ -154,55 +154,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // Let all other intents attempt to generate SQL first - only block if they actually fail
-
-    // 1) Plan SQL or use specific backtesting queries
-    let sql;
-    
-    // Use specific backtesting queries (skip LLM planning for these)
-    if (intent === 'backtest_buy') {
-      const assetMatch = question.match(/BTC|ETH|USDC|DAI/i);
-      const asset = assetMatch ? assetMatch[0] : 'BTC';
-      const yearMatch = question.match(/(\d{4})/);
-      const startYear = yearMatch ? yearMatch[1] : '2024';
-      // Limit to 2 years max to prevent huge queries
-      const currentYear = new Date().getFullYear();
-      const maxStartYear = Math.max(currentYear - 2, parseInt(startYear));
-      const startDate = `${maxStartYear}-01-01`;
-      const endDate = new Date().toISOString().split('T')[0];
-      
-      const backtestQuery = buildBuyAndHoldQuery(asset, startDate, endDate);
-      sql = backtestQuery.sql;
-    } else if (intent === 'backtest_lend') {
-      const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
-      const asset = assetMatch ? assetMatch[0] : 'ETH';
-      const yearMatch = question.match(/(\d{4})/);
-      const startYear = yearMatch ? yearMatch[1] : '2023';
-      // Limit to 2 years max to prevent huge queries
-      const currentYear = new Date().getFullYear();
-      const maxStartYear = Math.max(currentYear - 2, parseInt(startYear));
-      const startDate = `${maxStartYear}-01-01`;
-      const endDate = new Date().toISOString().split('T')[0];
-      
-        const backtestQuery = buildLendingAPYQuery(asset, startDate, endDate, question);
-        sql = backtestQuery.sql;
-    } else if (intent === 'forecast_apy') {
-      const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
-      const asset = assetMatch ? assetMatch[0] : 'ETH';
-      
-      const forecastQuery = buildAPYForecastQuery(asset, 60, question);
-      sql = forecastQuery.sql;
-    } else if (intent === 'rotation_strategy') {
-      const yearMatch = question.match(/since\s+(\d{4})/);
-      const startYear = yearMatch ? yearMatch[1] : '2020';
-      
-      const rotationQuery = buildRotationStrategyQuery(question, startYear);
-      sql = rotationQuery.sql;
-    } else {
-      // Standard queries: use LLM planning
-      const result = await planQuery(openai, question, null, intent);
-      sql = result.sql;
-    }
+    // All queries use general LLM planning - no hardcoded functions
+    const result = await planQuery(openai, question, null, intent);
+    let sql = result.sql;
 
     // 2) Execute SQL (with optional statement timeout)
     const pool = getDbPool();
@@ -221,10 +175,8 @@ export default async function handler(req, res) {
     }
     
     try {
-      // Shorter timeout for backtesting to prevent hangs
-      const ms = (intent === 'backtest_buy' || intent === 'backtest_lend' || intent === 'forecast_apy') 
-        ? 15000  // 15 seconds for backtesting
-        : Number(process.env.DB_QUERY_TIMEOUT_MS || 30000);  // 30 seconds for standard queries
+      // Standard timeout for all queries
+      const ms = Number(process.env.DB_QUERY_TIMEOUT_MS || 30000);  // 30 seconds for all queries
       await client.query(`SET statement_timeout TO ${ms}`);
 
       // First attempt
