@@ -179,29 +179,52 @@ export default async function handler(req, res) {
       const ms = Number(process.env.DB_QUERY_TIMEOUT_MS || 30000);  // 30 seconds for all queries
       await client.query(`SET statement_timeout TO ${ms}`);
 
+      // 🧠 SMART RETRY SYSTEM with Progressive Learning
+      let retryCount = 0;
+      const maxRetries = 3;
+      let lastError = null;
+      
       // First attempt
       try {
         const r = await client.query(sql);
         rows = r.rows || [];
       } catch (e1) {
-        // Retry with error-aware planning
-        const retry = await retryPlan(openai, question, sql, String(e1), null, intent);
-        sql = retry.sql;
-        sqlTried = sql;
-
-        // Second attempt
-        try {
-          const r2 = await client.query(sql);
-          rows = r2.rows || [];
-        } catch (e2) {
-          // Bubble precise DB error + which SQL failed
-          const err = new Error(`Query failed after retry: ${e2.message}`);
-          err.code = e2.code;
-          err.detail = e2.detail;
-          err.hint = e2.hint;
-          err.position = e2.position;
-          err.sql = sqlTried;
-          throw err;
+        lastError = e1;
+        
+        // Smart retry loop with progressive learning
+        for (retryCount = 1; retryCount <= maxRetries; retryCount++) {
+          try {
+            console.log(`🔄 Retry #${retryCount}: Learning from error - ${String(lastError).substring(0, 100)}...`);
+            
+            // Learn from the specific error and adapt strategy
+            const retry = await retryPlan(openai, question, sql, String(lastError), null, intent, retryCount);
+            sql = retry.sql;
+            sqlTried = sql;
+            
+            // Attempt the improved query
+            const r = await client.query(sql);
+            rows = r.rows || [];
+            
+            console.log(`✅ Success on retry #${retryCount}! Query learned and adapted.`);
+            break; // Success! Break out of retry loop
+            
+          } catch (retryError) {
+            lastError = retryError;
+            console.log(`❌ Retry #${retryCount} failed: ${String(retryError).substring(0, 100)}...`);
+            
+            // If this was the last retry, throw the error
+            if (retryCount === maxRetries) {
+              const err = new Error(`Query failed after ${maxRetries} learning attempts: ${retryError.message}`);
+              err.code = retryError.code;
+              err.detail = retryError.detail;
+              err.hint = retryError.hint;
+              err.position = retryError.position;
+              err.sql = sqlTried;
+              err.retryCount = retryCount;
+              err.originalError = String(e1);
+              throw err;
+            }
+          }
         }
       }
     } finally {
