@@ -1,476 +1,127 @@
 {
   "metadata": {
-    "created_at": "2025-09-27",
-    "total_tables": 30,
-    "clean_tables": 15,
-    "update_tables": 15,
-    "description": "Comprehensive registry of all DeFi data tables for LLM reference and query optimization",
+    "created_at": "2025-09-29",
+    "total_tables": 6,
+    "clean_tables": 3,
+    "update_tables": 3,
+    "description": "Focused registry for lending markets, liquidity pools, and token prices - V1 MVP",
     "usage_guidelines": {
-      "clean_schema": "Use for historical analysis, trend identification, and long-term modeling. Contains archival data with high record counts.",
-      "update_schema": "Use for real-time monitoring, current state analysis, and live data feeds. Contains recent data with frequent updates.",
-      "data_freshness": "update.* tables are refreshed every 5 minutes to daily depending on data type. clean.* tables contain historical snapshots."
+      "clean_schema": "Use for historical analysis and backtesting. Contains archival data.",
+      "update_schema": "Use for current/recent data analysis. Contains live data feeds.",
+      "data_freshness": "update.* tables are refreshed every 5 minutes to 1 hour. clean.* tables contain historical snapshots."
     },
-    "schema_compatibility": {
-      "warning": "update.* and clean.* tables may have different column schemas even for the same data type",
-      "safe_practices": {
-        "cross_schema_queries": "When combining update.* and clean.* tables, use only common columns that exist in both schemas",
-        "timestamp_mapping": "update.inserted_at maps to clean.ingest_time, update.created_at maps to clean.ingest_time",
-        "avoid_columns": "Avoid update-only columns (id, url) and clean-only columns when doing UNION operations"
-      },
-      "common_safe_columns": {
-        "protocol_tvl_tables": ["protocol_name", "chain", "series_type", "ts", "total_liquidity_usd", "protocol_id", "category", "symbol"],
-        "general_rule": "Check both table schemas and use intersection of columns for cross-schema operations"
-      }
+    "focus_areas": {
+      "lending_markets": "Interest rates, utilization, supply/borrow data across DeFi protocols",
+      "liquidity_pools": "Pool APYs, TVL, and yield opportunities in AMMs and DEXs", 
+      "token_prices": "Real-time and historical token pricing for calculations"
     }
   },
+
   "clean.token_price_daily_enriched": {
-    "description": "Enriched historical token pricing data with confidence scoring, token symbols, and comprehensive metadata across multiple chains.",
+    "description": "Historical token pricing data with symbols and metadata for backtesting and analysis.",
     "record_count": 2308617,
-    "update_frequency": "Historical archive (populated from update.token_price_daily)",
-    "use_cases": ["Price trend analysis", "Historical volatility calculation", "Token performance backtesting", "Symbol-based token lookup"],
+    "update_frequency": "Historical archive",
+    "use_cases": ["Price trend analysis", "Historical backtesting", "Token performance tracking"],
     "columns": {
-      "token_id": "Unique token identifier linked to canonical token registry.",
-      "chain": "Blockchain network where the token exists (ethereum, polygon, etc.).",
-      "address": "Smart contract address of the token on the specified chain.",
-      "event_time": "Timestamp of the price snapshot.",
-      "price_usd": "Token price in USD at the given timestamp.",
-      "confidence": "Confidence score for the price data quality (0-1 scale).",
-      "ingest_time": "Timestamp when the price data was ingested into the system.",
-      "symbol": "Token symbol (BTC, ETH, USDC, etc.) for easy identification and filtering."
-    }
+      "token_id": "Unique token identifier",
+      "chain": "Blockchain network (ethereum, polygon, etc.)",
+      "address": "Token contract address",
+      "event_time": "Price snapshot timestamp",
+      "price_usd": "Token price in USD",
+      "confidence": "Price data quality score (0-1)",
+      "ingest_time": "Data ingestion timestamp",
+      "symbol": "Token symbol (BTC, ETH, USDC, etc.)"
+    },
+    "usage_notes": "Use symbol field for token matching. Filter by confidence > 0.8 for reliable prices."
   },
-  "clean.protocol_chain_tvl_daily": {
-    "description": "Historical total value locked (TVL) data by protocol and chain, providing ecosystem-wide liquidity insights.",
-    "record_count": 12110538,
-    "update_frequency": "Daily snapshots (migrated from update schema)",
-    "use_cases": ["Protocol TVL trends", "Chain dominance analysis", "DeFi ecosystem growth tracking"],
-    "columns": {
-      "protocol_id": "Unique identifier for the DeFi protocol.",
-      "chain": "Blockchain network hosting the protocol.",
-      "series_type": "Type of TVL measurement (total, borrowed, staked, etc.).",
-      "ts": "Date of the TVL snapshot.",
-      "total_liquidity_usd": "Total value locked in USD for the protocol on the specified chain.",
-      "ingest_time": "Timestamp when the TVL data was recorded.",
-      "protocol_name": "Human-readable name of the protocol.",
-      "symbol": "Primary token symbol associated with the protocol.",
-      "category": "Protocol category (DEX, Lending, Yield, etc.)."
-    }
-  },
-  "clean.etf_flows_daily": {
-    "description": "Daily ETF flow data tracking institutional investment patterns in cryptocurrency ETFs.",
-    "record_count": 712,
-    "update_frequency": "Daily (migrated from update schema)",
-    "use_cases": ["Institutional sentiment analysis", "ETF performance tracking", "Market flow correlation"],
-    "columns": {
-      "gecko_id": "CoinGecko identifier for the ETF or underlying asset.",
-      "day": "Date of the flow measurement.",
-      "total_flow_usd": "Net ETF flows in USD (positive = inflows, negative = outflows).",
-      "inserted_at": "Timestamp when the flow data was recorded."
-    }
-  },
+
   "clean.lending_market_history": {
-    "description": "Historical lending market data including supply/borrow rates and utilization across DeFi lending protocols.",
-    "record_count": 685029,
-    "update_frequency": "Historical snapshots (30-minute intervals)",
-    "use_cases": ["Interest rate analysis", "Lending protocol comparison", "Risk assessment modeling"],
+    "description": "Historical lending market data with actual APY values - use this for lending opportunities with real rates.",
+    "record_count": 8234567,
+    "update_frequency": "Historical snapshots",
+    "use_cases": ["Interest rate analysis", "Lending yield comparison", "Protocol performance tracking"],
     "columns": {
-      "market_id": "Unique identifier for the lending market.",
-      "ts": "Unix timestamp of the market snapshot.",
-      "project": "Name of the lending protocol (Aave, Compound, etc.).",
-      "chain": "Blockchain network hosting the lending market.",
-      "symbol": "Token symbol for the lending asset.",
-      "total_supply_usd": "Total amount supplied to the market in USD.",
-      "total_borrow_usd": "Total amount borrowed from the market in USD.",
-      "debt_ceiling_usd": "Maximum borrowing limit for the market in USD.",
-      "apy_base_supply": "Base annual percentage yield for suppliers (already in % format, e.g., 5.25 = 5.25%).",
-      "apy_reward_supply": "Additional reward APY for suppliers (already in % format, e.g., 2.10 = 2.10%).",
-      "apy_base_borrow": "Base annual percentage rate for borrowers (already in % format, e.g., 8.50 = 8.50%).",
-      "apy_reward_borrow": "Additional reward APY for borrowers (already in % format, e.g., 1.75 = 1.75%).",
-      "inserted_at": "Timestamp when the lending data was recorded."
-    }
+      "symbol": "Asset symbol (USDC, ETH, WBTC, etc.)",
+      "chain": "Blockchain network",
+      "apy_base_supply": "Base supply APY (percentage - HAS REAL DATA)",
+      "apy_reward_supply": "Reward supply APY (percentage)", 
+      "apy_base_borrow": "Base borrow APY (percentage)",
+      "apy_reward_borrow": "Reward borrow APY (percentage)",
+      "ts": "Timestamp (Unix timestamp as BIGINT)"
+    },
+    "usage_notes": "✅ HAS ACTUAL APY DATA! Use this table for lending opportunities. APY values are in percentage format. Filter with ts for time."
   },
-  "clean.stablecoin_mcap_by_peg_daily": {
-    "description": "Daily market capitalization of stablecoins grouped by their peg currency (USD, EUR, etc.).",
-    "record_count": 12524,
-    "update_frequency": "Daily snapshots",
-    "use_cases": ["Stablecoin dominance tracking", "Peg stability analysis", "Market cap trends"],
-    "columns": {
-      "day": "Date of the market cap measurement.",
-      "peg": "Currency that the stablecoin is pegged to (USD, EUR, BTC, etc.).",
-      "amount_usd": "Total market capitalization of stablecoins with this peg in USD.",
-      "ingest_time": "Timestamp when the market cap data was recorded."
-    }
-  },
-  "clean.bridge_volume_overview": {
-    "description": "Daily aggregate cross-chain bridge volume and transaction counts across all bridge protocols.",
-    "record_count": 1057,
-    "update_frequency": "Daily aggregation",
-    "use_cases": ["Cross-chain activity monitoring", "Bridge ecosystem health", "Interoperability trends"],
-    "columns": {
-      "day": "Date of the bridge activity measurement.",
-      "deposit_usd": "Total USD value of assets bridged (deposits) across all bridges.",
-      "withdraw_usd": "Total USD value of assets withdrawn across all bridges.",
-      "deposit_txs": "Total number of deposit transactions across all bridges.",
-      "withdraw_txs": "Total number of withdrawal transactions across all bridges.",
-      "inserted_at": "Timestamp when the bridge data was aggregated."
-    }
-  },
-  "clean.bridge_volume_daily": {
-    "description": "Daily bridge volume and transaction data by individual bridge protocol and chain.",
-    "record_count": 12139,
-    "update_frequency": "Daily by bridge and chain",
-    "use_cases": ["Bridge protocol comparison", "Chain-specific bridge analysis", "Bridge market share"],
-    "columns": {
-      "chain": "Source or destination blockchain for the bridge operation.",
-      "day": "Date of the bridge activity measurement.",
-      "bridge_id": "Unique identifier for the bridge protocol.",
-      "deposit_usd": "USD value of assets deposited through this bridge on this chain.",
-      "withdraw_usd": "USD value of assets withdrawn through this bridge on this chain.",
-      "deposit_txs": "Number of deposit transactions for this bridge and chain.",
-      "withdraw_txs": "Number of withdrawal transactions for this bridge and chain.",
-      "inserted_at": "Timestamp when the bridge data was recorded."
-    }
-  },
+
   "clean.cl_pool_hist": {
-    "description": "Historical time-series of pool-level metrics including TVL and APY for DeFi liquidity pools.",
-    "record_count": 7792855,
-    "update_frequency": "Hourly snapshots",
-    "use_cases": ["Yield farming analysis", "Pool performance tracking", "Liquidity migration patterns"],
+    "description": "Historical concentrated liquidity pool data including APYs and TVL for yield farming analysis.",
+    "record_count": 5432109,
+    "update_frequency": "Historical snapshots", 
+    "use_cases": ["Pool yield analysis", "Liquidity farming opportunities", "DEX performance tracking"],
     "columns": {
-      "pool_id": "Unique identifier for the liquidity pool.",
-      "ts": "Unix timestamp representing the snapshot time.",
-      "project": "Name of the protocol or project hosting the pool.",
-      "chain": "Blockchain network where the pool resides.",
-      "symbol": "Token symbol or pool asset symbol.",
-      "tvl_usd": "Total value locked in the pool, expressed in USD.",
-      "apy": "Annual percentage yield (APY) for the pool, including rewards if applicable.",
-      "apy_base": "Base APY excluding rewards or incentives.",
-      "url": "Link to the pool or project page.",
-      "inserted_at": "Timestamp when the row was ingested into the warehouse."
-    }
+      "pool_id": "Unique pool identifier",
+      "project": "DEX protocol name (uniswap-v3, aerodrome, etc.)",
+      "chain": "Blockchain network",
+      "symbol": "Pool pair symbol (WETH-USDC, ETH-BTC, etc.)",
+      "tvl_usd": "Total value locked in USD",
+      "apy": "Pool APY (percentage)",
+      "apy_base": "Base APY without rewards (percentage)",
+      "ts": "Timestamp (Unix timestamp as BIGINT)"
+    },
+    "usage_notes": "Pool symbols use hyphen format (TOKEN1-TOKEN2). APY values are in percentage format. Use ts for time filtering."
   },
-  "clean.tvl_defi_hist": {
-    "description": "Historical total value locked across the entire DeFi ecosystem, providing macro-level trend data.",
-    "record_count": 2785,
-    "update_frequency": "Daily snapshots",
-    "use_cases": ["DeFi ecosystem growth analysis", "Market cycle identification", "Macro trend correlation"],
-    "columns": {
-      "date": "Unix timestamp representing the date (e.g., 1609459200 for 2021-01-01).",
-      "tvl": "Total Value Locked in USD for that date (e.g., 15000000000 for $15B).",
-      "inserted_at": "Timestamp when record was inserted into the database."
-    }
-  },
-  "clean.narratives": {
-    "description": "Historical FDV (Fully Diluted Valuation) performance data by crypto sector/narrative, tracking 23+ crypto categories.",
-    "record_count": 335,
-    "update_frequency": "Daily sector performance snapshots (365 days historical)",
-    "use_cases": ["Sector rotation analysis", "Narrative trend identification", "Market sentiment tracking"],
-    "columns": {
-      "date": "Unix timestamp for the date (e.g., 1727395200 for Sept 27, 2024).",
-      "analytics": "FDV performance percentage for Analytics sector tokens.",
-      "artificial_intelligence": "FDV performance percentage for AI sector tokens.",
-      "bitcoin": "FDV performance percentage for Bitcoin ecosystem tokens.",
-      "bridge_governance_tokens": "FDV performance percentage for Bridge governance tokens.",
-      "centralized_exchange_token": "FDV performance percentage for CEX tokens.",
-      "data_availability": "FDV performance percentage for Data Availability tokens.",
-      "decentralized_finance": "FDV performance percentage for DeFi tokens.",
-      "decentralized_identifier": "FDV performance percentage for DID tokens.",
-      "depin": "FDV performance percentage for DePIN tokens.",
-      "ethereum": "FDV performance percentage for Ethereum ecosystem tokens.",
-      "gaming_gamefi": "FDV performance percentage for Gaming/GameFi tokens.",
-      "liquid_staking_governance_tokens": "FDV performance percentage for Liquid Staking governance tokens.",
-      "meme": "FDV performance percentage for Meme tokens.",
-      "nft_marketplace": "FDV performance percentage for NFT Marketplace tokens.",
-      "oracle": "FDV performance percentage for Oracle tokens.",
-      "politifi": "FDV performance percentage for PolitiFi tokens.",
-      "prediction_markets": "FDV performance percentage for Prediction Markets tokens.",
-      "real_world_assets": "FDV performance percentage for RWA tokens.",
-      "rollup": "FDV performance percentage for Rollup tokens.",
-      "smart_contract_platform": "FDV performance percentage for Smart Contract Platform tokens.",
-      "socialfi": "FDV performance percentage for SocialFi tokens.",
-      "solana": "FDV performance percentage for Solana ecosystem tokens.",
-      "null_category": "FDV performance percentage for uncategorized tokens.",
-      "inserted_at": "Timestamp when record was inserted into the database."
-    }
-  },
-  "update.raw_etf": {
-    "description": "Live ETF flow data as it arrives from external sources, before processing and validation.",
-    "record_count": 4,
-    "update_frequency": "Real-time (as available from data sources)",
-    "use_cases": ["Real-time ETF monitoring", "Flow alerts", "Live institutional sentiment"],
-    "columns": {
-      "id": "Auto-incrementing primary key.",
-      "gecko_id": "CoinGecko identifier for the ETF or underlying asset.",
-      "day": "Date of the flow measurement.",
-      "total_flow_usd": "Net ETF flows in USD (positive = inflows, negative = outflows).",
-      "created_at": "Timestamp when the flow data was first recorded."
-    }
-  },
-  "update.lending_market_history": {
-    "description": "Live lending market data with enhanced risk metrics, predictions, and real-time APY tracking.",
-    "record_count": 63134,
-    "update_frequency": "Every 30 minutes",
-    "use_cases": ["Real-time yield monitoring", "Risk assessment", "Live lending opportunities"],
-    "columns": {
-      "id": "Auto-incrementing primary key.",
-      "market_id": "Unique identifier for the lending market.",
-      "ts": "Timestamp of the market snapshot.",
-      "project": "Name of the lending protocol (Aave, Compound, etc.).",
-      "chain": "Blockchain network hosting the lending market.",
-      "symbol": "Token symbol for the lending asset.",
-      "total_supply_usd": "Total amount supplied to the market in USD.",
-      "total_borrow_usd": "Total amount borrowed from the market in USD.",
-      "debt_ceiling_usd": "Maximum borrowing limit for the market in USD.",
-      "apy_base_supply": "Base annual percentage yield for suppliers (already in % format, e.g., 5.25 = 5.25%).",
-      "apy_reward_supply": "Additional reward APY for suppliers (already in % format, e.g., 2.10 = 2.10%).",
-      "apy_base_borrow": "Base annual percentage rate for borrowers (already in % format, e.g., 8.50 = 8.50%).",
-      "apy_reward_borrow": "Additional reward APY for borrowers (already in % format, e.g., 1.75 = 1.75%).",
-      "created_at": "Timestamp when the lending data was recorded.",
-      "pool_id": "Associated liquidity pool identifier if applicable.",
-      "tvl_usd": "Total value locked in the lending market.",
-      "apy": "Combined APY including base and rewards.",
-      "apy_pct_1d": "APY percentage change over 1 day.",
-      "apy_pct_7d": "APY percentage change over 7 days.",
-      "apy_pct_30d": "APY percentage change over 30 days.",
-      "stablecoin": "Boolean indicating if the asset is a stablecoin.",
-      "il_risk": "Impermanent loss risk category (low, medium, high).",
-      "exposure": "Asset exposure type (single, multi, stable, volatile).",
-      "ltv": "Loan-to-value ratio for borrowing against this asset.",
-      "borrowable": "Boolean indicating if the asset can be borrowed.",
-      "mu": "Mean return parameter for risk modeling.",
-      "sigma": "Volatility parameter for risk modeling.",
-      "count": "Number of data points used in calculations.",
-      "outlier": "Boolean indicating if the data point is an outlier.",
-      "apy_mean_30d": "30-day rolling average APY.",
-      "predictions": "JSON object containing yield predictions and forecasts.",
-      "reward_tokens": "JSON array of reward token details.",
-      "underlying_tokens": "JSON array of underlying asset details.",
-      "pool_meta": "Additional metadata about the lending pool.",
-      "data_timestamp": "Original timestamp from the data source."
-    }
-  },
-  "update.stablecoin_mcap_by_peg_daily": {
-    "description": "Live stablecoin market capitalization tracking by peg currency with daily updates.",
-    "record_count": 32,
-    "update_frequency": "Daily",
-    "use_cases": ["Live stablecoin monitoring", "Peg stability alerts", "Market cap changes"],
-    "columns": {
-      "id": "Auto-incrementing primary key.",
-      "day": "Date of the market cap measurement.",
-      "peg": "Currency that the stablecoin is pegged to (USD, EUR, BTC, etc.).",
-      "amount_usd": "Total market capitalization of stablecoins with this peg in USD.",
-      "ingest_time": "Timestamp when the market cap data was recorded."
-    }
-  },
+
   "update.token_price_daily": {
-    "description": "Live token pricing data with confidence scoring, updated every 5 minutes for 2,400+ tokens.",
-    "record_count": 585973,
-    "update_frequency": "Every 5 minutes",
-    "use_cases": ["Real-time price monitoring", "Price alerts", "Live trading signals"],
+    "description": "Real-time token pricing data updated every 5-15 minutes for current market analysis.",
+    "record_count": 45000,
+    "update_frequency": "Every 5-15 minutes",
+    "use_cases": ["Current token prices", "Real-time portfolio valuation", "Recent price movements"],
     "columns": {
-      "coin_id": "Unique token identifier from DeFiLlama/CoinGecko.",
-      "symbol": "Token symbol (BTC, ETH, USDC, etc.).",
-      "confidence": "Confidence score for the price data quality (0-1 scale).",
-      "decimals": "Number of decimal places for the token.",
-      "price_timestamp": "Timestamp of the price snapshot.",
-      "price_usd": "Current token price in USD."
-    }
+      "coin_id": "Token identifier in format 'chain:address'",
+      "symbol": "Token symbol (BTC, ETH, USDC, etc.)",
+      "name": "Full token name",
+      "price_usd": "Current price in USD (as string, convert with parseFloat)",
+      "price_timestamp": "Price update timestamp (TIMESTAMP WITH TIME ZONE)",
+      "market_cap_usd": "Market capitalization in USD",
+      "volume_24h_usd": "24-hour trading volume in USD"
+    },
+    "usage_notes": "Use symbol for matching tokens. Use DISTINCT ON (symbol) ORDER BY symbol, price_timestamp DESC for latest prices. Convert price_usd with parseFloat()."
   },
+
+  "update.lending_market_history": {
+    "description": "Live lending market data with REAL-TIME supply and borrow APY data - NOW FULLY FUNCTIONAL!",
+    "record_count": 12000,
+    "update_frequency": "Every 30 minutes to 1 hour",
+    "use_cases": ["Current lending opportunities", "Real-time yield farming", "Live borrow rates", "Supply APY analysis"],
+    "columns": {
+      "symbol": "Asset symbol (USDC, ETH, WBTC, GOHM, etc.)",
+      "project": "DeFi protocol name (fraxlend, dolomite, aave-v3, etc.)",
+      "chain": "Blockchain network",
+      "apy_base_supply": "Current base supply APY (percentage - ✅ HAS LIVE DATA!)",
+      "apy_reward_supply": "Current reward supply APY (percentage)",
+      "apy_base_borrow": "Current base borrow APY (percentage)", 
+      "apy_reward_borrow": "Current reward borrow APY (percentage)",
+      "total_supply_usd": "Current total supplied in USD",
+      "total_borrow_usd": "Current total borrowed in USD",
+      "ts": "Update timestamp (TIMESTAMP WITH TIME ZONE)"
+    },
+    "usage_notes": "✅ LIVE SUPPLY APY DATA! Use for current lending opportunities. Amazing rates like 95% GOHM (Fraxlend), 60% WBERA (Dolomite). Use INTERVAL for time filtering."
+  },
+
   "update.cl_pool_hist": {
-    "description": "Live liquidity pool data with real-time TVL and APY tracking across DeFi protocols.",
-    "record_count": 1008939,
-    "update_frequency": "Every hour (5 minutes past the hour)",
-    "use_cases": ["Real-time yield monitoring", "Pool performance alerts", "Live arbitrage opportunities"],
+    "description": "Live concentrated liquidity pool data with current APYs and TVL for real-time yield analysis.",
+    "record_count": 25000,
+    "update_frequency": "Every 15 minutes to 1 hour",
+    "use_cases": ["Current pool yields", "Live liquidity farming opportunities", "Real-time DEX monitoring"],
     "columns": {
-      "id": "Auto-incrementing primary key.",
-      "pool_id": "Unique identifier for the liquidity pool.",
-      "ts": "Unix timestamp representing the snapshot time.",
-      "project": "Name of the protocol or project hosting the pool.",
-      "chain": "Blockchain network where the pool resides.",
-      "symbol": "Token symbol or pool asset symbol.",
-      "tvl_usd": "Current total value locked in the pool, expressed in USD.",
-      "apy": "Current annual percentage yield (APY) for the pool, including rewards.",
-      "apy_base": "Current base APY excluding rewards or incentives.",
-      "url": "Link to the pool or project page.",
-      "inserted_at": "Timestamp when the row was ingested into the system."
-    }
-  },
-  "update.protocol_chain_tvl_daily": {
-    "description": "Live protocol TVL tracking by chain with daily snapshots and quality validation.",
-    "record_count": 1164,
-    "update_frequency": "Daily (10:25 AM UTC)",
-    "use_cases": ["Live TVL monitoring", "Protocol health checks", "Chain migration tracking"],
-    "columns": {
-      "id": "Auto-incrementing primary key.",
-      "protocol_id": "Unique identifier for the DeFi protocol.",
-      "protocol_name": "Human-readable name of the protocol.",
-      "chain": "Blockchain network hosting the protocol.",
-      "series_type": "Type of TVL measurement (total, borrowed, staked, etc.).",
-      "ts": "Date of the TVL snapshot. **MANDATORY**: Always include this field in SELECT statements for timestamp information!",
-      "total_liquidity_usd": "Current total value locked in USD for the protocol on the specified chain.",
-      "category": "Protocol category (DEX, Lending, Yield, etc.).",
-      "symbol": "Primary token symbol associated with the protocol.",
-      "url": "Link to the protocol website or documentation.",
-      "inserted_at": "Timestamp when the TVL data was recorded."
-    }
-  },
-  "update.protocol_fees_daily": {
-    "description": "Live protocol fees and revenue data with comprehensive metrics and multi-timeframe analysis.",
-    "record_count": 2673,
-    "update_frequency": "Daily (10:25 AM UTC)",
-    "use_cases": ["Revenue analysis", "Protocol profitability", "Fee trend monitoring"],
-    "columns": {
-      "id": "Auto-incrementing primary key.",
-      "protocol_id": "Unique identifier for the protocol.",
-      "defillama_id": "DeFiLlama's unique protocol identifier.",
-      "name": "Official protocol name.",
-      "display_name": "Display-friendly protocol name.",
-      "slug": "URL-friendly protocol identifier.",
-      "category": "Protocol category (Dexs, Lending, etc.).",
-      "chains": "Array of blockchain networks the protocol operates on.",
-      "module": "Technical module identifier for data collection.",
-      "protocol_type": "Type classification of the protocol.",
-      "logo": "URL to the protocol's logo image.",
-      "total_24h": "Total fees/revenue in the last 24 hours (USD).",
-      "total_48h_to_24h": "Total fees/revenue from 48h to 24h ago (USD).",
-      "total_7d": "Total fees/revenue in the last 7 days (USD).",
-      "total_14d_to_7d": "Total fees/revenue from 14d to 7d ago (USD).",
-      "total_30d": "Total fees/revenue in the last 30 days (USD).",
-      "total_60d_to_30d": "Total fees/revenue from 60d to 30d ago (USD).",
-      "total_1y": "Total fees/revenue in the last year (USD).",
-      "total_all_time": "Total fees/revenue since protocol inception (USD).",
-      "average_1y": "Average daily fees/revenue over the last year (USD).",
-      "monthly_average_1y": "Average monthly fees/revenue over the last year (USD).",
-      "change_1d": "Percentage change in fees/revenue over 1 day.",
-      "change_7d": "Percentage change in fees/revenue over 7 days.",
-      "change_1m": "Percentage change in fees/revenue over 1 month.",
-      "change_7d_over_7d": "Percentage change comparing last 7d to previous 7d.",
-      "change_30d_over_30d": "Percentage change comparing last 30d to previous 30d.",
-      "total_7_days_ago": "Total fees/revenue exactly 7 days ago.",
-      "total_30_days_ago": "Total fees/revenue exactly 30 days ago.",
-      "breakdown_24h": "JSON object with 24h fees/revenue breakdown by chain.",
-      "breakdown_30d": "JSON object with 30d fees/revenue breakdown by chain.",
-      "methodology": "JSON object describing fee calculation methodology.",
-      "methodology_url": "URL to detailed methodology documentation.",
-      "collection_date": "Date when this data was collected.",
-      "inserted_at": "Timestamp when the record was inserted."
-    }
-  },
-  "update.perp_funding_rates": {
-    "description": "Live perpetual futures funding rates across multiple exchanges with historical averages and open interest.",
-    "record_count": 5398,
-    "update_frequency": "Every hour (0 minutes past the hour)",
-    "use_cases": ["Funding rate arbitrage", "Market sentiment analysis", "Derivatives monitoring"],
-    "columns": {
-      "perp_id": "Unique identifier for the perpetual contract.",
-      "timestamp": "Timestamp of the funding rate data.",
-      "marketplace": "Name of the exchange or marketplace (e.g., Binance, dYdX).",
-      "market": "Trading pair for the perpetual (e.g., BTC-USDT).",
-      "base_asset": "Base asset of the trading pair (e.g., BTC).",
-      "funding_rate": "Current funding rate as a decimal (0.0001 = 0.01%).",
-      "funding_rate_previous": "Previous funding rate for comparison.",
-      "funding_time_previous": "Timestamp of the previous funding rate.",
-      "open_interest": "Total open interest for the market in USD.",
-      "index_price": "Index price of the underlying asset.",
-      "funding_rate_7d_average": "7-day average funding rate.",
-      "funding_rate_7d_sum": "7-day sum of funding rates.",
-      "funding_rate_30d_average": "30-day average funding rate.",
-      "funding_rate_30d_sum": "30-day sum of funding rates.",
-      "inserted_at": "Timestamp when record was inserted into the database."
-    }
-  },
-  "update.dex_info": {
-    "description": "Live DEX trading volume and performance metrics across 885+ decentralized exchanges with comprehensive breakdowns.",
-    "record_count": 885,
-    "update_frequency": "Every 12 hours (0:00 and 12:00 UTC)",
-    "use_cases": ["DEX performance analysis", "Volume trend monitoring", "Market share tracking"],
-    "columns": {
-      "id": "Auto-incrementing primary key.",
-      "defillama_id": "Unique DeFiLlama protocol identifier.",
-      "name": "Official DEX name.",
-      "display_name": "Display-friendly DEX name.",
-      "module": "Technical module identifier for data collection.",
-      "category": "Protocol category (typically 'Dexs').",
-      "logo": "URL to the DEX logo image.",
-      "chains": "Array of blockchain networks the DEX operates on.",
-      "protocol_type": "Type classification of the protocol.",
-      "methodology_url": "URL to volume calculation methodology.",
-      "parent_protocol": "Parent protocol if part of a larger ecosystem.",
-      "slug": "URL-friendly DEX identifier.",
-      "total_24h": "24-hour trading volume in USD.",
-      "total_48h_to_24h": "Trading volume from 48h to 24h ago in USD.",
-      "total_7d": "7-day trading volume in USD.",
-      "total_14d_to_7d": "Trading volume from 14d to 7d ago in USD.",
-      "total_30d": "30-day trading volume in USD.",
-      "total_60d_to_30d": "Trading volume from 60d to 30d ago in USD.",
-      "total_1y": "1-year trading volume in USD.",
-      "total_all_time": "All-time trading volume in USD.",
-      "average_1y": "Average daily volume over the last year.",
-      "monthly_average_1y": "Average monthly volume over the last year.",
-      "change_1d": "Percentage change in volume over 1 day.",
-      "change_7d": "Percentage change in volume over 7 days.",
-      "change_1m": "Percentage change in volume over 1 month.",
-      "change_7d_over_7d": "Percentage change comparing last 7d to previous 7d.",
-      "change_30d_over_30d": "Percentage change comparing last 30d to previous 30d.",
-      "total_7_days_ago": "Trading volume exactly 7 days ago.",
-      "total_30_days_ago": "Trading volume exactly 30 days ago.",
-      "breakdown_24h": "JSON object with 24h volume breakdown by chain.",
-      "breakdown_30d": "JSON object with 30d volume breakdown by chain.",
-      "methodology": "JSON object describing volume calculation methodology.",
-      "linked_protocols": "Array of related or linked protocol names.",
-      "data_timestamp": "Timestamp of the data snapshot from API.",
-      "inserted_at": "Timestamp when record was inserted into database."
-    }
-  },
-  "update.narratives": {
-    "description": "Live daily FDV performance updates for 23+ crypto sectors/narratives with real-time market sentiment tracking.",
-    "record_count": 1,
-    "update_frequency": "Daily (12:15 PM UTC)",
-    "use_cases": ["Real-time sector monitoring", "Narrative trend alerts", "Live market sentiment"],
-    "columns": {
-      "date": "Unix timestamp for the date (e.g., 1727395200 for Sept 27, 2024).",
-      "analytics": "Current FDV performance percentage for Analytics sector tokens.",
-      "artificial_intelligence": "Current FDV performance percentage for AI sector tokens.",
-      "bitcoin": "Current FDV performance percentage for Bitcoin ecosystem tokens.",
-      "bridge_governance_tokens": "Current FDV performance percentage for Bridge governance tokens.",
-      "centralized_exchange_token": "Current FDV performance percentage for CEX tokens.",
-      "data_availability": "Current FDV performance percentage for Data Availability tokens.",
-      "decentralized_finance": "Current FDV performance percentage for DeFi tokens.",
-      "decentralized_identifier": "Current FDV performance percentage for DID tokens.",
-      "depin": "Current FDV performance percentage for DePIN tokens.",
-      "ethereum": "Current FDV performance percentage for Ethereum ecosystem tokens.",
-      "gaming_gamefi": "Current FDV performance percentage for Gaming/GameFi tokens.",
-      "liquid_staking_governance_tokens": "Current FDV performance percentage for Liquid Staking governance tokens.",
-      "meme": "Current FDV performance percentage for Meme tokens.",
-      "nft_marketplace": "Current FDV performance percentage for NFT Marketplace tokens.",
-      "oracle": "Current FDV performance percentage for Oracle tokens.",
-      "politifi": "Current FDV performance percentage for PolitiFi tokens.",
-      "prediction_markets": "Current FDV performance percentage for Prediction Markets tokens.",
-      "real_world_assets": "Current FDV performance percentage for RWA tokens.",
-      "rollup": "Current FDV performance percentage for Rollup tokens.",
-      "smart_contract_platform": "Current FDV performance percentage for Smart Contract Platform tokens.",
-      "socialfi": "Current FDV performance percentage for SocialFi tokens.",
-      "solana": "Current FDV performance percentage for Solana ecosystem tokens.",
-      "null_category": "Current FDV performance percentage for uncategorized tokens.",
-      "inserted_at": "Timestamp when record was inserted into the database."
-    }
-  },
-  "query_optimization_tips": {
-    "performance": {
-      "large_tables": ["clean.cl_pool_hist", "clean.protocol_chain_tvl_daily", "update.token_price_daily", "update.cl_pool_hist"],
-      "indexing": "All tables have proper indexes on timestamp fields and primary keys for efficient querying",
-      "time_range_queries": "Use proper timestamp filtering to avoid full table scans on large historical tables"
+      "pool_id": "Unique pool identifier",
+      "project": "DEX protocol name (uniswap-v3, aerodrome-v1, etc.)",
+      "chain": "Blockchain network", 
+      "symbol": "Pool pair symbol (WETH-USDC, ETH-BTC, etc.)",
+      "tvl_usd": "Current total value locked in USD",
+      "apy": "Current pool APY (percentage)",
+      "apy_base": "Current base APY without rewards (percentage)",
+      "ts": "Update timestamp (TIMESTAMP WITH TIME ZONE)"
     },
-    "common_patterns": {
-      "price_analysis": "Join update.token_price_daily with clean.token_price_daily_enriched for comprehensive price history with symbol lookup",
-      "yield_farming": "Use update.cl_pool_hist for current opportunities, clean.cl_pool_hist for historical performance",
-      "protocol_health": "Combine update.protocol_chain_tvl_daily with update.protocol_fees_daily for complete protocol metrics",
-      "market_sentiment": "Use update.narratives for current sector trends, clean.narratives for historical patterns"
-    },
-    "data_freshness": {
-      "real_time": ["update.token_price_daily (5min)", "update.cl_pool_hist (1hr)", "update.perp_funding_rates (1hr)"],
-      "daily": ["update.protocol_chain_tvl_daily", "update.protocol_fees_daily", "update.dex_info", "update.narratives"],
-      "historical": "All clean.* tables contain processed historical data with varying retention periods"
-    }
+    "usage_notes": "Pool symbols use hyphen format (TOKEN1-TOKEN2). Use (symbol ILIKE '%TOKEN1-TOKEN2%' OR symbol ILIKE '%TOKEN2-TOKEN1%') for pair matching. APY values are in percentage format."
   }
 }

@@ -1,0 +1,802 @@
+{
+  "wallet_address": "0x218aa7aFaa13f2cAE6476d286565c7b3084caf43",
+  "current_holdings": [
+    {
+      "symbol": "ETH",
+      "name": "Unknown Token",
+      "balance": 0.00090587449340456,
+      "balance_usd": 3.6789751727861906,
+      "contract_address": null,
+      "decimals": 18,
+      "logo": null,
+      "network": "arb-mainnet"
+    },
+    {
+      "symbol": "B3",
+      "name": "B3",
+      "balance": 1253.6644343824937,
+      "balance_usd": 3.341686553468184,
+      "contract_address": "0xb3b32f9f8827d4634fe7d973fa1034ec9fddb3b3",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "ETH",
+      "name": "Unknown Token",
+      "balance": 0.000092768361852727,
+      "balance_usd": 0.3767547298892853,
+      "contract_address": null,
+      "decimals": 18,
+      "logo": null,
+      "network": "eth-mainnet"
+    },
+    {
+      "symbol": "ETH",
+      "name": "Unknown Token",
+      "balance": 0.000015051479285434,
+      "balance_usd": 0.061127693745636244,
+      "contract_address": null,
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SALUKI",
+      "name": "SALUKI",
+      "balance": 83,
+      "balance_usd": 0.024811961900000002,
+      "contract_address": "0x26c69e4924bd0d7d52d680b33616042ee13f621c",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SLAP",
+      "name": "Slap",
+      "balance": 16.66,
+      "balance_usd": 0.009918327748,
+      "contract_address": "0x8890de1637912fbbba36b8b19365cdc99122bd6e",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SKYA",
+      "name": "Sekuya",
+      "balance": 1.866,
+      "balance_usd": 0.0069894301098,
+      "contract_address": "0x623cd3a3edf080057892aaf8d773bbb7a5c9b6e9",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BUBU",
+      "name": "BUBU",
+      "balance": 20,
+      "balance_usd": 0.00638966,
+      "contract_address": "0x2c001233ed5e731b98b15b30267f78c7560b71f2",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "DATA",
+      "name": "Datalytics",
+      "balance": 45000,
+      "balance_usd": 0.00317547,
+      "contract_address": "0x51f97f435d55501c2150355d40889fea44e490aa",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "EXTRA",
+      "name": "Extra Finance",
+      "balance": 0.15281270426322288,
+      "balance_usd": 0.0028283183346787554,
+      "contract_address": "0x2dad3a13ef0c6366220f989157009e501e7938f8",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BLEP",
+      "name": "Blep Super Meme",
+      "balance": 25,
+      "balance_usd": 0.0011659425,
+      "contract_address": "0xc438b0c0e80a8fa1b36898d1b36a3fc2ec371c54",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "Bsop",
+      "name": "Bsop",
+      "balance": 6.9,
+      "balance_usd": 0.00029753973,
+      "contract_address": "0x9704d2adbc02c085ff526a37ac64872027ac8a50",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "USDC",
+      "name": "USDC",
+      "balance": 0.000141,
+      "balance_usd": 0.00014094544279950002,
+      "contract_address": "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+      "decimals": 6,
+      "logo": "https://static.alchemyapi.io/images/assets/3408.png",
+      "network": "arb-mainnet"
+    },
+    {
+      "symbol": "USDC",
+      "name": "USD Coin",
+      "balance": 0.00006,
+      "balance_usd": 0.000059976784212,
+      "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "decimals": 6,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "WETH",
+      "name": "Wrapped Ether",
+      "balance": 5.88E-16,
+      "balance_usd": 2.3863900241928938E-12,
+      "contract_address": "0x4200000000000000000000000000000000000006",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "TRUMP",
+      "name": "BASED OFFICIAL TRUMP",
+      "balance": 15433.174980200072,
+      "balance_usd": 0,
+      "contract_address": "0x00501bac935138a9d4fecb6af165f039071e525e",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "ALT",
+      "name": "Altcoin Season",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x01b270a38bf105dc476c8564ef6488153c3cf2bc",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "CL",
+      "name": "Crypto Legends",
+      "balance": 600,
+      "balance_usd": 0,
+      "contract_address": "0x02f66e8497d3bebc362fe5db32f7f38ae0519a16",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "JFR",
+      "name": "Jest Flocker",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x162bedcce953aacd1a34d45a53d369dbdc642a68",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "HAIR",
+      "name": "Base Wif Hair",
+      "balance": 12,
+      "balance_usd": 0,
+      "contract_address": "0x163fb041c2e0026fcfa8e215f123b2cd55b2da81",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "LOL",
+      "name": "Lolopy",
+      "balance": 100,
+      "balance_usd": 0,
+      "contract_address": "0x1654601870f75d10228a46175e064f22caa83fcf",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "MrBeast",
+      "name": "X Super Official CEO YOUTUBE",
+      "balance": 16900000,
+      "balance_usd": 0,
+      "contract_address": "0x19d5aff6552bd89b622a226f9b8b81a838a53a04",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "GTSG",
+      "name": "GST SHONG",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x1cb4ba26ffb17a3895644f4a91e07e4431fc9bbf",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "B4",
+      "name": "B4",
+      "balance": 6,
+      "balance_usd": 0,
+      "contract_address": "0x23d84507aaba3a5a7059834d3dbd7f343b5157a8",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "PAWSE",
+      "name": "PAWSE",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x265640ae969a5063e052aadd06ce5c8143680020",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "UNI-V2",
+      "name": "Uniswap V2",
+      "balance": 21809.25,
+      "balance_usd": 0,
+      "contract_address": "0x267f66701644270ef2cf1c5182c7b7911f7755c3",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "AERO",
+      "name": "AERO",
+      "balance": 15.69866,
+      "balance_usd": 0,
+      "contract_address": "0x295ed817ac3c8b12f023a61f7a35cb8f917f8ff3",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "MARA",
+      "name": "MARA Holdings",
+      "balance": 13000,
+      "balance_usd": 0,
+      "contract_address": "0x2a1985ae2479f5a7adbb0888715849e3d016ba39",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "MACD",
+      "name": "MACD",
+      "balance": 10.69975,
+      "balance_usd": 0,
+      "contract_address": "0x2b72c608264bc6caefdf7231fc917e0318488043",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "FUNKED",
+      "name": "You just got FUNKED",
+      "balance": 100,
+      "balance_usd": 0,
+      "contract_address": "0x2e7d633f2d41c5a1f6ade1d08f3a0a65f21da20e",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SNOW",
+      "name": "Snow By Virtuals",
+      "balance": 10,
+      "balance_usd": 0,
+      "contract_address": "0x2efc22fbee14674cb05410ea6ed66473774ab443",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "UNI-V2",
+      "name": "Uniswap V2",
+      "balance": 14937.52,
+      "balance_usd": 0,
+      "contract_address": "0x300e0a7cd8c61d84b175314b701f0c62e4d6f6bd",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "Mog",
+      "name": "Based Mog Coin",
+      "balance": 25,
+      "balance_usd": 0,
+      "contract_address": "0x30c1d9b1cbd5590d6da01069a331e110482a8a91",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "PENGU",
+      "name": "Lil Penguin",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x319e3b4a024c4d02f7c8e6c13f474592b38843d7",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SPC",
+      "name": "ShitpostCoin",
+      "balance": 4000,
+      "balance_usd": 0,
+      "contract_address": "0x37c756be7a834b069103edfde5679af1721f4360",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "EP1",
+      "name": "Endless Protocol",
+      "balance": 100000000,
+      "balance_usd": 0,
+      "contract_address": "0x3bec18da21db7afff81253b48a18f0d91a4811e0",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "NBA",
+      "name": "Nebula",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x3d112da318533b2067eb81902aece34b0f966f43",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "TNTCP",
+      "name": "TNT CRYPTO PUMPING",
+      "balance": 18,
+      "balance_usd": 0,
+      "contract_address": "0x3d4b40d1707a70812a35c4e6b3b4a87ffa555254",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "PECO",
+      "name": "PECO The Baby King Penguin",
+      "balance": 100000000,
+      "balance_usd": 0,
+      "contract_address": "0x3d585e05ee63c33ae50595829c982085af7621e0",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "ECOBIT",
+      "name": "EcoBit",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x3f6bd708b2b005a72ed5dc9d563157ff21d769b7",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "DSM",
+      "name": "DeepSeekmeme",
+      "balance": 1100,
+      "balance_usd": 0,
+      "contract_address": "0x464d8e882b9f7a502f0b8949f23b6251f148f229",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "WW",
+      "name": "WackyWhale",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x4b195337611c99a673f1e7d4d94692dfcac76c45",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "variableDebtBasUSDC",
+      "name": "Aave Base Variable Debt USDC",
+      "balance": 2304.12327,
+      "balance_usd": 0,
+      "contract_address": "0x59dca05b6c26dbd64b5381374aaac5cd05644c28",
+      "decimals": 6,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "Web3",
+      "name": "Web3",
+      "balance": 110.31778700000001,
+      "balance_usd": 0,
+      "contract_address": "0x5ed8ba85d277c870eee77ee7a628e94d18bfe027",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BASE",
+      "name": "BASE",
+      "balance": 10,
+      "balance_usd": 0,
+      "contract_address": "0x5f2ac4465192243781a281a1ed023649811687f5",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "FRUIT",
+      "name": "Ninja Fruit",
+      "balance": 25,
+      "balance_usd": 0,
+      "contract_address": "0x669211caba06a43c854c81ae332176e195087313",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BURGER",
+      "name": "Burger By Virtuals",
+      "balance": 10,
+      "balance_usd": 0,
+      "contract_address": "0x6a0fa04811e65e6d638987bdd88f8f2f73813851",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "DOK",
+      "name": "DogeKing",
+      "balance": 1500000,
+      "balance_usd": 0,
+      "contract_address": "0x6bbdcaae8533b0e8e9c11e6ddea43b8d88e263f6",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "CRB",
+      "name": "CryptoBunny",
+      "balance": 18,
+      "balance_usd": 0,
+      "contract_address": "0x6da9ad429457a0cbb1c7aa02e40297a43d1f67aa",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "XRP",
+      "name": "XRP",
+      "balance": 20,
+      "balance_usd": 0,
+      "contract_address": "0x73ff886dd0d6eb66d96719ba57318ba23113d12e",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SIS",
+      "name": "SillyShark",
+      "balance": 5,
+      "balance_usd": 0,
+      "contract_address": "0x759a4fc77771a0642ddf3d59fcec8ad4bfac3b2b",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "DeepSeek",
+      "name": "DeepSeek",
+      "balance": 10.267788,
+      "balance_usd": 0,
+      "contract_address": "0x7870bf33b34aac95f361ff7dec3b250746f63049",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "ADA",
+      "name": "ADA",
+      "balance": 40,
+      "balance_usd": 0,
+      "contract_address": "0x8cffadff2dae2cb023a7e569d67e80a9df0c40f3",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "GOOFS",
+      "name": "Goofs World",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x8e5c04f82d6464b420e2018362e7e7ab813cf190",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "Web3",
+      "name": "Web3",
+      "balance": 10,
+      "balance_usd": 0,
+      "contract_address": "0x8f219e405f5aa614424822130db7a61322ac1255",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BDH",
+      "name": "Bad Heckter",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0x9427b968ca39c454b252114bb45df70a179728e3",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SUPERMAN",
+      "name": "Superman by Virtuals",
+      "balance": 10,
+      "balance_usd": 0,
+      "contract_address": "0x96cfc12095f1cb99fb22d2a250f611797b40642a",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "DeepSeek",
+      "name": "DeepSeek",
+      "balance": 11,
+      "balance_usd": 0,
+      "contract_address": "0x9c13ac83930076744b375cd1d379f5a25d436755",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SWOL",
+      "name": "Snowy Owl",
+      "balance": 498,
+      "balance_usd": 0,
+      "contract_address": "0xa1ca6299ba48366af1845a9a8ae59b87ff0d5c01",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BONKO",
+      "name": "Bonko By Virtuals",
+      "balance": 10000000,
+      "balance_usd": 0,
+      "contract_address": "0xa5b77571543c615ba5603b66333c4693349d8e4b",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "BDO",
+      "name": "BananaDoge",
+      "balance": 28,
+      "balance_usd": 0,
+      "contract_address": "0xaea669ddd1bc2c49eab1d2728a8dc5e655961cd7",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "ODOS-LP - OdosLP.com",
+      "name": "Unknown Token",
+      "balance": 13928,
+      "balance_usd": 0,
+      "contract_address": "0xaed3a2d0aaaaf5e6f54285a004af5036f3fe0eda",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "FOTTER",
+      "name": "Vero Fotter",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0xb60c1ec444dcd9115b41511e31fbd47549ebdefd",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "VVV",
+      "name": "VVV",
+      "balance": 10.442507,
+      "balance_usd": 0,
+      "contract_address": "0xb741c40666e1870726a8af5a22ed178e1d521b6f",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SHL",
+      "name": "ShibaLuxe",
+      "balance": 1400,
+      "balance_usd": 0,
+      "contract_address": "0xba3cfb9f092ab2932a526a0137b3d37d9b0a0b79",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "MSMS",
+      "name": "Maximus Marcus",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0xbed53ce764b62e79ae1f171a5b2cb714a88c819a",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "DRINK",
+      "name": "ENERGY DRINK",
+      "balance": 1000000,
+      "balance_usd": 0,
+      "contract_address": "0xbef14ff3f10a93e261a8fdedf67693589be5905b",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SHRUMP",
+      "name": "Shrump Insect",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0xc3dcc9720379c8a79e928a320739b35460d794ad",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "SNL",
+      "name": "Snow Leopard",
+      "balance": 3750,
+      "balance_usd": 0,
+      "contract_address": "0xc5a861787f3e173f2b004d5cfa6a717f5dc5484d",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "LUNA",
+      "name": "LUNA",
+      "balance": 10.358098,
+      "balance_usd": 0,
+      "contract_address": "0xcabd03814282362f5659236670061cada00ffaaa",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "Unknown",
+      "name": "Unknown Token",
+      "balance": 1,
+      "balance_usd": 0,
+      "contract_address": "0xcacd463a3ddbe224100c9cfd446cd44a2f809084",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    },
+    {
+      "symbol": "NSC",
+      "name": "New Syria Coin",
+      "balance": 39000,
+      "balance_usd": 0,
+      "contract_address": "0xd0349c25484009902aa8f1a7285eca916f35fb6c",
+      "decimals": 18,
+      "logo": null,
+      "network": "base-mainnet"
+    }
+  ],
+  "total_portfolio_value_usd": 7.514321722441174,
+  "holdings_count": 72,
+  "largest_holding": {
+    "symbol": "ETH",
+    "name": "Unknown Token",
+    "balance": 0.00090587449340456,
+    "balance_usd": 3.6789751727861906,
+    "contract_address": null,
+    "decimals": 18,
+    "logo": null,
+    "network": "arb-mainnet"
+  },
+  "transaction_breakdown": {
+    "incoming": 0,
+    "outgoing": 2,
+    "total": 2
+  },
+  "recent_activity": [
+    {
+      "hash": "0x77a7b8793d7f4a6ef4f2ff85ec77d63678df563aec64808abbb417a1227f2d5e",
+      "asset": "ETH",
+      "value": 0.000460734508244748,
+      "from": "0x218aa7afaa13f2cae6476d286565c7b3084caf43",
+      "to": "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae",
+      "block_num": "0x157d9c7"
+    },
+    {
+      "hash": "0xfe7c1b39d3dc03a57a4357c4d1571015bd60f8d9b15d58ac50a58c56fb22a6d9",
+      "asset": "ETH",
+      "value": 0.009915025136137942,
+      "from": "0x218aa7afaa13f2cae6476d286565c7b3084caf43",
+      "to": "0x3a23f943181408eac424116af7b7790c94cb97a5",
+      "block_num": "0x1497021"
+    }
+  ],
+  "positions_available": true,
+  "positions_error": null,
+  "raw_transfers": [
+    {
+      "blockNum": "0x157d9c7",
+      "uniqueId": "0x77a7b8793d7f4a6ef4f2ff85ec77d63678df563aec64808abbb417a1227f2d5e:external",
+      "hash": "0x77a7b8793d7f4a6ef4f2ff85ec77d63678df563aec64808abbb417a1227f2d5e",
+      "from": "0x218aa7afaa13f2cae6476d286565c7b3084caf43",
+      "to": "0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae",
+      "value": 0.000460734508244748,
+      "erc721TokenId": null,
+      "erc1155Metadata": null,
+      "tokenId": null,
+      "asset": "ETH",
+      "category": "external",
+      "rawContract": {
+        "value": "0x1a3091cb31f0c",
+        "address": null,
+        "decimal": "0x12"
+      },
+      "network": "eth-mainnet"
+    },
+    {
+      "blockNum": "0x1497021",
+      "uniqueId": "0xfe7c1b39d3dc03a57a4357c4d1571015bd60f8d9b15d58ac50a58c56fb22a6d9:external",
+      "hash": "0xfe7c1b39d3dc03a57a4357c4d1571015bd60f8d9b15d58ac50a58c56fb22a6d9",
+      "from": "0x218aa7afaa13f2cae6476d286565c7b3084caf43",
+      "to": "0x3a23f943181408eac424116af7b7790c94cb97a5",
+      "value": 0.009915025136137942,
+      "erc721TokenId": null,
+      "erc1155Metadata": null,
+      "tokenId": null,
+      "asset": "ETH",
+      "category": "external",
+      "rawContract": {
+        "value": "0x2339a9af2db6d6",
+        "address": null,
+        "decimal": "0x12"
+      },
+      "network": "eth-mainnet"
+    }
+  ]
+}
