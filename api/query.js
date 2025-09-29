@@ -163,6 +163,7 @@ export default async function handler(req, res) {
     const pool = getDbPool();
     let rows = [];
     let sqlTried = sql;
+    let retryCount = 0; // Track retry attempts for debugging
 
     let client;
     try {
@@ -181,7 +182,6 @@ export default async function handler(req, res) {
       await client.query(`SET statement_timeout TO ${ms}`);
 
       // 🧠 SMART RETRY SYSTEM with Progressive Learning
-      let retryCount = 0;
       const maxRetries = 3;
       let lastError = null;
       
@@ -367,6 +367,7 @@ export default async function handler(req, res) {
       source: "database_query", 
       intent, 
       backtestResult,
+      retryCount: retryCount,
       debug: debugInfo 
     });
   } catch (err) {

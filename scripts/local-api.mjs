@@ -1,6 +1,8 @@
 import 'dotenv/config';                    // load .env locally
 import http from 'http';
 import url from 'url';
+import fs from 'fs';
+import path from 'path';
 import handler from '../api/query.js';     // your existing API handler
 
 const PORT = process.env.PORT || 3000;
@@ -8,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const server = http.createServer(async (req, res) => {
   const { pathname } = url.parse(req.url, true);
 
+  // Handle API requests
   if (req.method === 'POST' && pathname === '/api/query') {
     let raw = '';
     req.on('data', (c) => (raw += c));
@@ -43,6 +46,34 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+
+  // Serve static files
+  if (req.method === 'GET') {
+    let filePath;
+    if (pathname === '/') {
+      filePath = path.join(process.cwd(), 'public', 'index.html');
+    } else {
+      filePath = path.join(process.cwd(), 'public', pathname);
+    }
+
+    try {
+      const data = fs.readFileSync(filePath);
+      const ext = path.extname(filePath).toLowerCase();
+      
+      let contentType = 'text/plain';
+      if (ext === '.html') contentType = 'text/html';
+      else if (ext === '.css') contentType = 'text/css';
+      else if (ext === '.js') contentType = 'application/javascript';
+      else if (ext === '.json') contentType = 'application/json';
+      
+      res.statusCode = 200;
+      res.setHeader('content-type', contentType);
+      res.end(data);
+      return;
+    } catch (err) {
+      // File not found, fall through to 404
+    }
   }
 
   res.statusCode = 404;
