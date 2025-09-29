@@ -104,6 +104,7 @@ export default async function handler(req, res) {
         intent: intent
       });
     }
+
     
     // Handle wallet analysis with improved Alchemy API
     if (intent === 'wallet_analysis') {
