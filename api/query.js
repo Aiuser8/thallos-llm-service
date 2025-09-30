@@ -82,6 +82,37 @@ export default async function handler(req, res) {
     // Check if question is within data scope or needs general knowledge handling
     const inDataScope = await isQuestionInDataScope(question);
     
+    if (inDataScope === 'meta') {
+      // Handle meta questions about service capabilities
+      const answer = `I can answer questions about:
+
+📊 **Liquidity Pools**
+• Current APYs for pools like WETH-USDC, ETH-BTC
+• Best pools by TVL and yield (Aerodrome, Uniswap)
+• Pool comparisons across protocols and chains
+
+💰 **Lending Rates**
+• Supply and borrow APYs (Aave V3, Compound, Fraxlend)
+• Best lending opportunities for ETH, USDC, BTC
+• Protocol comparisons for lending rates
+
+💵 **Token Prices**
+• Real-time prices for major tokens (BTC, ETH, USDC)
+• Recent price data (updated every 5 minutes)
+
+Try asking:
+• "What are the best liquidity pools right now?"
+• "What's the lending APY for ETH on Aave?"
+• "Show me WETH-USDC pool rates"
+• "What's the current price of BTC?"`;
+      
+      return res.status(200).json({ 
+        answer, 
+        source: "meta_response",
+        note: "Service capabilities overview"
+      });
+    }
+    
     if (!inDataScope) {
       // Handle as general knowledge question
       const answer = await handleGeneralKnowledgeQuestion(openai, question);
