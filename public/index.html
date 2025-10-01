@@ -13,7 +13,12 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #0a0e27;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(102, 126, 234, 0.2) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(118, 75, 162, 0.2) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(102, 126, 234, 0.2) 0px, transparent 50%),
+        radial-gradient(at 0% 100%, rgba(118, 75, 162, 0.2) 0px, transparent 50%);
       min-height: 100vh;
       color: #333;
     }
@@ -44,11 +49,13 @@
     }
 
     .query-section {
-      background: white;
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-      margin-bottom: 30px;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      margin-bottom: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
     }
 
     .query-form {
@@ -90,19 +97,20 @@
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
       border: none;
-      padding: 15px 30px;
-      border-radius: 12px;
+      padding: 18px 36px;
+      border-radius: 16px;
       font-size: 16px;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.3s ease;
-      min-width: 120px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      min-width: 140px;
       height: fit-content;
+      box-shadow: 0 4px 14px rgba(102, 126, 234, 0.4);
     }
 
     .ask-button:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 12px 28px rgba(102, 126, 234, 0.5);
     }
 
     .ask-button:disabled {
@@ -124,11 +132,19 @@
     }
 
     .result-card {
-      background: white;
-      border-radius: 20px;
-      padding: 25px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-      margin-bottom: 20px;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(10px);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      margin-bottom: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .result-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.25);
     }
 
     .result-header {
@@ -182,28 +198,55 @@
     }
 
     .example-card {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 15px;
-      padding: 20px;
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 28px;
       cursor: pointer;
-      transition: all 0.3s ease;
-      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .example-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
     }
 
     .example-card:hover {
-      background: rgba(255, 255, 255, 0.2);
-      transform: translateY(-2px);
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-6px) scale(1.02);
+      border-color: rgba(255, 255, 255, 0.3);
+      box-shadow: 0 12px 40px rgba(102, 126, 234, 0.3);
+    }
+
+    .example-card:hover::before {
+      opacity: 1;
     }
 
     .example-title {
       color: white;
-      font-weight: 600;
-      margin-bottom: 8px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      margin-bottom: 10px;
+      position: relative;
+      z-index: 1;
     }
 
     .example-query {
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 14px;
+      color: rgba(255, 255, 255, 0.85);
+      font-size: 15px;
+      line-height: 1.5;
+      position: relative;
+      z-index: 1;
     }
 
     .loading-dots {
@@ -242,9 +285,9 @@
           <textarea 
             id="q" 
             class="query-input" 
-            placeholder="e.g., What are the best USDC lending opportunities?"
+            placeholder="e.g., What are the best stablecoin lending opportunities right now?"
             rows="3"
-          >What are the best USDC lending opportunities?</textarea>
+          >What are the best stablecoin lending opportunities right now?</textarea>
         </div>
         <button id="submit" type="submit" class="ask-button">
           <span id="button-text">Ask</span>
@@ -282,21 +325,21 @@
     </div>
 
     <div class="examples">
-      <div class="example-card" onclick="runExample('What are the best USDC lending opportunities?')">
-        <div class="example-title">💰 Lending Opportunities</div>
-        <div class="example-query">Find the highest APY lending rates for USDC</div>
+      <div class="example-card" onclick="runExample('What are the best stablecoin lending opportunities right now?')">
+        <div class="example-title">💰 Stablecoin Yields</div>
+        <div class="example-query">Discover highest APYs for USDC, USDT, and DAI lending across all chains</div>
       </div>
-      <div class="example-card" onclick="runExample('What are the current APYs for WETH-USDC pools?')">
-        <div class="example-title">🏊 Liquidity Pools</div>
-        <div class="example-query">Check yields for WETH-USDC liquidity pools</div>
+      <div class="example-card" onclick="runExample('What are the best WETH-USDC liquidity pools?')">
+        <div class="example-title">🏊 Top Liquidity Pools</div>
+        <div class="example-query">Compare WETH-USDC pool yields across Uniswap, Aerodrome, and more</div>
       </div>
-      <div class="example-card" onclick="runExample('Where can I borrow ETH for the cheapest rates?')">
-        <div class="example-title">📊 Borrowing Rates</div>
-        <div class="example-query">Find the lowest cost to borrow ETH</div>
+      <div class="example-card" onclick="runExample('Where can I get the best ETH lending rates?')">
+        <div class="example-title">📊 ETH Opportunities</div>
+        <div class="example-query">Find the highest supply APY for ETH across DeFi protocols</div>
       </div>
       <div class="example-card" onclick="runExample('What is the current price of BTC?')">
-        <div class="example-title">💎 Token Prices</div>
-        <div class="example-query">Get real-time cryptocurrency prices</div>
+        <div class="example-title">💎 Live Prices</div>
+        <div class="example-query">Get real-time Bitcoin price data and market insights</div>
       </div>
     </div>
   </div>
@@ -349,7 +392,7 @@
         const resp = await fetch('/api/query', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ question })
+          body: JSON.stringify({ question, stream: true })
         });
 
         if (!resp.ok) {
@@ -359,24 +402,55 @@
           throw new Error(msg);
         }
 
-        const data = await resp.json();
+        // Handle streaming response
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let answerText = '';
 
-        // Show results
-        showResults();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        if (data.answer) {
-          answerCard.style.display = 'block';
-          answerContent.textContent = data.answer;
-        }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // Keep incomplete line in buffer
 
-        if (data.sql) {
-          sqlCard.style.display = 'block';
-          sqlContent.textContent = data.sql;
-        }
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.substring(6));
 
-        if (Array.isArray(data.rows) && data.rows.length > 0) {
-          dataCard.style.display = 'block';
-          dataContent.textContent = JSON.stringify(data.rows.slice(0, 10), null, 2);
+              if (data.type === 'sql') {
+                sqlCard.style.display = 'block';
+                sqlContent.textContent = data.sql;
+              }
+
+              if (data.type === 'rows') {
+                dataCard.style.display = 'block';
+                dataContent.textContent = JSON.stringify(data.rows, null, 2);
+              }
+
+              if (data.type === 'answer_start') {
+                showResults();
+                answerCard.style.display = 'block';
+                answerContent.textContent = '';
+                answerText = '';
+              }
+
+              if (data.type === 'answer_chunk') {
+                answerText += data.content;
+                answerContent.textContent = answerText;
+              }
+
+              if (data.type === 'done') {
+                hideThinking();
+              }
+
+              if (data.type === 'error') {
+                throw new Error(data.error);
+              }
+            }
+          }
         }
 
       } catch (err) {

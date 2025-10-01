@@ -66,6 +66,7 @@ export default async function handler(req, res) {
     const minimal =
       body?.minimal === true || urlObj.searchParams.get("minimal") === "true";
     const presentationHint = body?.presentationHint;
+    const stream = body?.stream === true || urlObj.searchParams.get("stream") === "true";
 
     if (!question) {
       return res.status(400).json({
@@ -379,9 +380,41 @@ Try asking:
     // 4) Respond (JSON only)
     if (minimal) return res.status(200).json({ sql, rows, source: "database_query", intent, backtestResult });
 
+    // Handle streaming response
+    if (stream && !answer) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      });
+
+      // Send initial data (SQL and rows)
+      res.write(`data: ${JSON.stringify({ type: 'sql', sql })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'rows', rows: rows.slice(0, 10), totalRows: rows.length })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'answer_start' })}\n\n`);
+
+      try {
+        const answerStream = await generateAnswerFromResults(openai, question, rows, presentationHint, intent, retryCount, true);
+        
+        for await (const chunk of answerStream) {
+          const content = chunk.choices[0]?.delta?.content || '';
+          if (content) {
+            res.write(`data: ${JSON.stringify({ type: 'answer_chunk', content })}\n\n`);
+          }
+        }
+        
+        res.write(`data: ${JSON.stringify({ type: 'done', retryCount, intent })}\n\n`);
+        res.end();
+      } catch (error) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+        res.end();
+      }
+      return;
+    }
+
     // Generate standard answer if no backtesting was performed
     if (!answer) {
-      answer = await generateAnswerFromResults(openai, question, rows, presentationHint, intent);
+      answer = await generateAnswerFromResults(openai, question, rows, presentationHint, intent, retryCount, false);
     }
     
     // Always include debug info for troubleshooting
