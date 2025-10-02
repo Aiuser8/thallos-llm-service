@@ -137,55 +137,6 @@ Try asking:
       });
     }
 
-    
-    // Handle wallet analysis with improved Alchemy API
-    if (intent === 'wallet_analysis') {
-      const walletAddress = extractWalletAddress(question);
-      
-      if (!walletAddress) {
-        return res.status(400).json({
-          error: "Please provide a valid Ethereum wallet address (0x...)",
-          intent: intent
-        });
-      }
-      
-      const alchemyApiKey = process.env.ALCHEMY_API_KEY;
-      if (!alchemyApiKey) {
-        return res.status(500).json({
-          error: "Wallet analysis is not configured. Missing Alchemy API key.",
-          intent: intent
-        });
-      }
-      
-      try {
-        const walletAnalysis = await analyzeWalletWithAlchemy(walletAddress, alchemyApiKey);
-        
-        if (walletAnalysis.error) {
-          return res.status(500).json({
-            error: walletAnalysis.error,
-            wallet_address: walletAddress,
-            intent: intent
-          });
-        }
-        
-        // Generate a simple plain English summary
-        const answer = generateWalletSummary(walletAnalysis);
-        
-        return res.status(200).json({
-          answer: answer,
-          wallet_analysis: walletAnalysis,
-          source: "alchemy_api",
-          intent: intent
-        });
-        
-      } catch (error) {
-        return res.status(500).json({
-          error: `Wallet analysis failed: ${error.message}`,
-          wallet_address: walletAddress,
-          intent: intent
-        });
-      }
-    }
 
     // All queries use general LLM planning - no hardcoded functions
     const result = await planQuery(openai, question, null, intent);
@@ -265,123 +216,12 @@ Try asking:
       // Note: We no longer call pool.end() - the pool stays alive for reuse
     }
 
-    // 3) Handle backtesting/forecasting calculations
-    let backtestResult = null;
-    let answer = null;
-    
-    if (intent === 'backtest_buy' && rows && rows.length > 0) {
-      // Extract amount from question or use default (handle k/m suffixes)
-      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([km]?)/i);
-      let amountUsd = 1000; // default
-      if (amountMatch) {
-        const baseAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-        const suffix = amountMatch[2]?.toLowerCase() || '';
-        if (suffix === 'k') {
-          amountUsd = baseAmount * 1000;
-        } else if (suffix === 'm') {
-          amountUsd = baseAmount * 1000000;
-        } else {
-          amountUsd = baseAmount;
-        }
-      }
-      
-      backtestResult = calculateBuyAndHoldBacktest(rows, amountUsd);
-      
-      if (!backtestResult.error) {
-        answer = `If you had invested $${backtestResult.amount_usd.toLocaleString()} on ${backtestResult.start_date}, you would have bought ${backtestResult.units_bought.toFixed(6)} units at $${backtestResult.start_price.toFixed(2)}. Today, your investment would be worth $${backtestResult.current_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return). (Data as of ${backtestResult.end_date})`;
-      }
-    } else if (intent === 'backtest_lend' && rows && rows.length > 0) {
-      // Extract amount and dates from question (handle k/m suffixes)
-      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([km]?)/i);
-      let amountUsd = 1000; // default
-      if (amountMatch) {
-        const baseAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-        const suffix = amountMatch[2]?.toLowerCase() || '';
-        if (suffix === 'k') {
-          amountUsd = baseAmount * 1000;
-        } else if (suffix === 'm') {
-          amountUsd = baseAmount * 1000000;
-        } else {
-          amountUsd = baseAmount;
-        }
-      }
-      
-      // Extract dates from question or use defaults
-      const yearMatch = question.match(/(\d{4})/);
-      const startYear = yearMatch ? yearMatch[1] : '2020';
-      const startDate = `${startYear}-01-01`;
-      const endDate = new Date().toISOString().split('T')[0];
-      
-      // Extract asset from question
-      const assetMatch = question.match(/ETH|BTC|USDC|DAI/i);
-      const asset = assetMatch ? assetMatch[0] : 'ETH';
-      
-      // Get price data for the same asset and date range
-      let priceData = null;
-      try {
-        const priceQuery = buildBuyAndHoldQuery(asset, startDate, endDate);
-        const priceResult = await pool.query(priceQuery.sql);
-        priceData = priceResult.rows;
-      } catch (err) {
-        console.log("Could not fetch price data:", err.message);
-      }
-      
-      backtestResult = calculateLendingBacktest(rows, amountUsd, startDate, endDate, priceData);
-      
-      if (!backtestResult.error) {
-        // Extract protocol info from the data
-        const protocols = [...new Set(rows.map(r => r.project).filter(p => p))];
-        const protocolInfo = protocols.length > 0 ? ` using ${protocols.join(', ')}` : '';
-        
-        if (backtestResult.price_adjusted_scenario) {
-          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} of ${asset} starting ${backtestResult.start_date}${protocolInfo} (average ${backtestResult.average_apy.toFixed(2)}% APY), here are two scenarios:
-
-1. **Flat Price Scenario**: Your investment would be worth $${backtestResult.final_value.toLocaleString()} (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return)
-
-2. **Price-Adjusted Scenario**: Your investment would be worth $${backtestResult.price_adjusted_scenario.final_value.toLocaleString()} (${backtestResult.price_adjusted_scenario.percent_return > 0 ? '+' : ''}${backtestResult.price_adjusted_scenario.percent_return.toFixed(1)}% return) - this includes the ${asset} price change from $${backtestResult.price_adjusted_scenario.start_price.toFixed(2)} to $${backtestResult.price_adjusted_scenario.end_price.toFixed(2)}.
-
-(Data as of ${backtestResult.end_date})`;
-        } else {
-          answer = `If you had lent $${backtestResult.amount_usd.toLocaleString()} starting ${backtestResult.start_date}${protocolInfo} at an average ${backtestResult.average_apy.toFixed(2)}% APY, your investment would be worth $${backtestResult.final_value.toLocaleString()} today (${backtestResult.percent_return > 0 ? '+' : ''}${backtestResult.percent_return.toFixed(1)}% return). Note: Price data not available for full analysis. (Data as of ${backtestResult.end_date})`;
-        }
-      }
-    } else if (intent === 'forecast_apy' && rows && rows.length > 0) {
-      backtestResult = calculateAPYForecast(rows);
-      
-      if (!backtestResult.error) {
-        // Extract protocol info from the data
-        const protocols = [...new Set(rows.map(r => r.project).filter(p => p))];
-        const protocolInfo = protocols.length > 0 ? ` (based on ${protocols.join(', ')} data)` : '';
-        
-        answer = `Based on the last ${backtestResult.forecast_period} of data, the expected APY is ${backtestResult.forecast_apy.toFixed(2)}% (range: ${backtestResult.min_apy.toFixed(2)}% - ${backtestResult.max_apy.toFixed(2)}%, confidence: ${backtestResult.confidence})${protocolInfo}. ${backtestResult.note}`;
-      }
-    } else if (intent === 'rotation_strategy' && rows && rows.length > 0) {
-      const amountMatch = question.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)\s*([km]?)/i);
-      let initialAmount = 10000; // default
-      if (amountMatch) {
-        const baseAmount = parseFloat(amountMatch[1].replace(/,/g, ''));
-        const suffix = amountMatch[2]?.toLowerCase() || '';
-        if (suffix === 'k') {
-          initialAmount = baseAmount * 1000;
-        } else if (suffix === 'm') {
-          initialAmount = baseAmount * 1000000;
-        } else {
-          initialAmount = baseAmount;
-        }
-      }
-      
-      backtestResult = calculateRotationStrategy(rows, initialAmount);
-      
-      if (!backtestResult.error) {
-        answer = `If you had rotated quarterly into the top decile of stablecoin pools since ${backtestResult.start_date?.split('T')[0]}, your CAGR would be ${backtestResult.cagr.toFixed(2)}%. Starting with $${backtestResult.initial_amount.toLocaleString()}, you would have $${backtestResult.final_value.toLocaleString()} today (${backtestResult.total_return_percent.toFixed(1)}% total return over ${backtestResult.years.toFixed(1)} years). Average quarterly APY was ${backtestResult.avg_quarterly_apy.toFixed(2)}% across ${backtestResult.avg_pool_count.toFixed(0)} pools per quarter. (Data as of ${backtestResult.end_date?.split('T')[0]})`;
-      }
-    }
 
     // 4) Respond (JSON only)
-    if (minimal) return res.status(200).json({ sql, rows, source: "database_query", intent, backtestResult });
+    if (minimal) return res.status(200).json({ sql, rows, source: "database_query", intent });
 
     // Handle streaming response
-    if (stream && !answer) {
+    if (stream) {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -412,10 +252,8 @@ Try asking:
       return;
     }
 
-    // Generate standard answer if no backtesting was performed
-    if (!answer) {
-      answer = await generateAnswerFromResults(openai, question, rows, presentationHint, intent, retryCount, false);
-    }
+    // Generate answer from results
+    const answer = await generateAnswerFromResults(openai, question, rows, presentationHint, intent, retryCount, false);
     
     // Always include debug info for troubleshooting
     const debugInfo = {
@@ -430,7 +268,6 @@ Try asking:
       answer, 
       source: "database_query", 
       intent, 
-      backtestResult,
       retryCount: retryCount,
       debug: debugInfo 
     });
@@ -439,13 +276,7 @@ Try asking:
     const message = err?.message || String(err);
     let contextualMessage = message;
     
-    if (intent === 'complex_backtest') {
-      contextualMessage = "This complex backtesting strategy (involving leverage, looping, or multi-protocol interactions) couldn't be processed with our current data. Try simpler backtests with single protocols and basic buy-and-hold or lending strategies.";
-    } else if (intent === 'liquidity_pool_analysis') {
-      contextualMessage = "This liquidity pool comparison couldn't be completed. Try asking about specific metrics like 'What's the current APY for ETH/USDC pools on Aerodrome?' or 'Compare current yields on Uniswap vs Curve.'";
-    } else if (intent === 'rotation_strategy') {
-      contextualMessage = "This rotation strategy analysis couldn't be completed with the available data. The query might be too complex or require data we don't have sufficient coverage for.";
-    } else if (message.includes('timestamp') || message.includes('bigint') || message.includes('UNION')) {
+    if (message.includes('timestamp') || message.includes('bigint') || message.includes('UNION')) {
       contextualMessage = "There was a data compatibility issue with this query. Try asking about a single protocol or shorter time period.";
     } else if (message.includes('does not exist') || message.includes('column')) {
       contextualMessage = "This query requires data fields that aren't available. Try a simpler version of your question.";
